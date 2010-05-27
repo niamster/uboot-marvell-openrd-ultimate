@@ -27,12 +27,16 @@
 /*
  * SCSI support.
  */
+
+/* #define DEBUG */
+
 #include <common.h>
 #include <command.h>
 #include <asm/processor.h>
 #include <scsi.h>
 #include <image.h>
 #include <pci.h>
+#include <asm/byteorder.h>
 
 #if (CONFIG_COMMANDS & CFG_CMD_SCSI)
 
@@ -43,8 +47,18 @@
 #else
 #define SCSI_DEV_ID		CONFIG_SCSI_DEV_ID
 #endif
+#elif defined CONFIG_SATA_ULI5288
+
+#define SCSI_VEND_ID 0x10b9
+#define SCSI_DEV_ID  0x5288
+
+#elif defined CONFIG_SATA_6121
+
+#define SCSI_VEND_ID 0x11ab
+#define SCSI_DEV_ID  0x6121
+
 #else
-#error CONFIG_SCSI_SYM53C8XX must be defined
+#error no scsi device defined
 #endif
 
 

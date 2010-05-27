@@ -45,6 +45,7 @@ extern int spr_post_test (int flags);
 extern int sysmon_post_test (int flags);
 extern int dsp_post_test (int flags);
 extern int codec_post_test (int flags);
+extern int mv_post_entry (int flags);
 
 extern int sysmon_init_f (void);
 
@@ -222,6 +223,16 @@ struct post_test post_list[] =
 	CFG_POST_CODEC
     },
 #endif
+    {
+	"Marvell POST",
+	"mv_post_entry",
+	"This is MV post startup",
+	POST_MEM | POST_ALWAYS | POST_MANUAL,
+	&mv_post_entry,
+	NULL,
+	NULL,
+	CFG_POST_MARVELL
+    },
 };
 
 unsigned int post_list_size = sizeof (post_list) / sizeof (struct post_test);

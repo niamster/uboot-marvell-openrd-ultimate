@@ -90,6 +90,10 @@
 #include "sntp.h"
 #endif
 
+#if (CONFIG_COMMANDS & CFG_CMD_RCVR)
+#include "rcvr.h"
+#endif
+
 #if (CONFIG_COMMANDS & CFG_CMD_NET)
 
 #define ARP_TIMEOUT		5		/* Seconds before trying ARP again */
@@ -378,6 +382,10 @@ restart:
 		NetOurVLAN = getenv_VLAN("vlan");	/* VLANs must be read */
 		NetOurNativeVLAN = getenv_VLAN("nvlan");
 		break;
+#if (CONFIG_COMMANDS & CFG_CMD_RCVR)
+	case RCVR:
+		break;
+#endif
 	default:
 		break;
 	}
@@ -448,6 +456,11 @@ restart:
 			SntpStart();
 			break;
 #endif
+#if (CONFIG_COMMANDS & CFG_CMD_RCVR)
+		case RCVR:
+			RecoverRequest();
+			break;
+#endif
 		default:
 			break;
 		}
@@ -474,6 +487,7 @@ restart:
 	 *	someone sets `NetState' to a state that terminates.
 	 */
 	for (;;) {
+		int timerVal;
 		WATCHDOG_RESET();
 #ifdef CONFIG_SHOW_ACTIVITY
 		{
@@ -502,7 +516,8 @@ restart:
 		 *	Check for a timeout, and run the timeout handler
 		 *	if we have one.
 		 */
-		if (timeHandler && ((get_timer(0) - timeStart) > timeDelta)) {
+		timerVal = get_timer(0);
+		if (timeHandler && ((timerVal - timeStart) > timeDelta)) {
 			thand_f *x;
 
 #if defined(CONFIG_MII) || (CONFIG_COMMANDS & CFG_CMD_MII)
@@ -1248,6 +1263,8 @@ NetReceive(volatile uchar * inpkt, int len)
 		 */
 #ifdef ET_DEBUG
 		puts ("Got ARP\n");
+		printf (" Addr 0x%x\n", ip);
+
 #endif
 		arp = (ARP_t *)ip;
 		if (len < ARP_HDR_SIZE) {
@@ -1536,6 +1553,9 @@ static int net_check_prereq (proto_t protocol)
 	case RARP:
 	case BOOTP:
 	case CDP:
+#if (CONFIG_COMMANDS & CFG_CMD_RCVR)
+	case RCVR:
+#endif
 		if (memcmp (NetOurEther, "\0\0\0\0\0\0", 6) == 0) {
 #ifdef CONFIG_NET_MULTI
 			extern int eth_get_dev_index (void);

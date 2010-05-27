@@ -52,10 +52,12 @@
 
 #include <common.h>
 #include <command.h>
+#include <asm/byteorder.h>
 #include <asm/processor.h>
 
 
-#if (CONFIG_COMMANDS & CFG_CMD_USB)
+#if defined(CONFIG_CMD_USB)
+#include <part.h>
 #include <usb.h>
 
 #ifdef CONFIG_USB_STORAGE
@@ -168,13 +170,13 @@ static struct us_data usb_stor[USB_MAX_STOR_DEV];
 
 int usb_stor_get_info(struct usb_device *dev, struct us_data *us, block_dev_desc_t *dev_desc);
 int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,struct us_data *ss);
-unsigned long usb_stor_read(int device, unsigned long blknr, unsigned long blkcnt, unsigned long *buffer);
+unsigned long usb_stor_read(int device, unsigned long blknr, unsigned long blkcnt, void *buffer);
 struct usb_device * usb_get_dev_index(int index);
 void uhci_show_temp_int_td(void);
 
 block_dev_desc_t *usb_stor_get_dev(int index)
 {
-	return &usb_dev_desc[index];
+	return (index < USB_MAX_STOR_DEV) ? &usb_dev_desc[index] : NULL;
 }
 
 
@@ -187,17 +189,20 @@ void usb_show_progress(void)
  * show info on storage devices; 'usb start/init' must be invoked earlier
  * as we only retrieve structures populated during devices initialization
  */
-void usb_stor_info(void)
+int usb_stor_info(void)
 {
 	int i;
 
-	if (usb_max_devs > 0)
+	if (usb_max_devs > 0) {
 		for (i = 0; i < usb_max_devs; i++) {
 			printf ("  Device %d: ", i);
 			dev_print(&usb_dev_desc[i]);
 		}
-	else
-		printf("No storage devices, perhaps not 'usb start'ed..?\n");
+		return 0;
+	}
+
+	printf("No storage devices, perhaps not 'usb start'ed..?\n");
+	return 1;
 }
 
 /*********************************************************************************
@@ -470,9 +475,9 @@ int usb_stor_BBB_comdat(ccb *srb, struct us_data *us)
 	/* always OUT to the ep */
 	pipe = usb_sndbulkpipe(us->pusb_dev, us->ep_out);
 
-	cbw.dCBWSignature = swap_32(CBWSIGNATURE);
-	cbw.dCBWTag = swap_32(CBWTag++);
-	cbw.dCBWDataTransferLength = swap_32(srb->datalen);
+	cbw.dCBWSignature = cpu_to_le32(CBWSIGNATURE);
+	cbw.dCBWTag = cpu_to_le32(CBWTag++);
+	cbw.dCBWDataTransferLength = cpu_to_le32(srb->datalen);
 	cbw.bCBWFlags = (dir_in? CBWFLAGS_IN : CBWFLAGS_OUT);
 	cbw.bCBWLUN = srb->lun;
 	cbw.bCDBLength = srb->cmdlen;
@@ -688,14 +693,14 @@ int usb_stor_BBB_transport(ccb *srb, struct us_data *us)
 	printf("\n");
 #endif
 	/* misuse pipe to get the residue */
-	pipe = swap_32(csw.dCSWDataResidue);
+	pipe = le32_to_cpu(csw.dCSWDataResidue);
 	if (pipe == 0 && srb->datalen != 0 && srb->datalen - data_actlen != 0)
 		pipe = srb->datalen - data_actlen;
-	if (CSWSIGNATURE != swap_32(csw.dCSWSignature)) {
+	if (CSWSIGNATURE != le32_to_cpu(csw.dCSWSignature)) {
 		USB_STOR_PRINTF("!CSWSIGNATURE\n");
 		usb_stor_BBB_reset(us);
 		return USB_STOR_TRANSPORT_FAILED;
-	} else if ((CBWTag - 1) != swap_32(csw.dCSWTag)) {
+	} else if ((CBWTag - 1) != le32_to_cpu(csw.dCSWTag)) {
 		USB_STOR_PRINTF("!Tag\n");
 		usb_stor_BBB_reset(us);
 		return USB_STOR_TRANSPORT_FAILED;
@@ -726,7 +731,7 @@ int usb_stor_CB_transport(ccb *srb, struct us_data *us)
 	ccb reqsrb;
 	int retry,notready;
 
-	psrb=&reqsrb;
+	psrb = &reqsrb;
 	status=USB_STOR_TRANSPORT_GOOD;
 	retry=0;
 	notready=0;
@@ -771,8 +776,8 @@ do_retry:
 	psrb->cmd[1]=srb->lun<<5;
 	psrb->cmd[4]=18;
 	psrb->datalen=18;
-	psrb->pdata=&srb->sense_buf[0];
-	psrb->cmdlen=12;
+	psrb->pdata = &srb->sense_buf[0];
+	psrb->cmdlen=6; /*12*/
 	/* issue the command */
 	result=usb_stor_CB_comdat(psrb,us);
 	USB_STOR_PRINTF("auto request returned %d\n",result);
@@ -829,7 +834,7 @@ static int usb_inquiry(ccb *srb,struct us_data *ss)
 		srb->cmd[1]=srb->lun<<5;
 		srb->cmd[4]=36;
 		srb->datalen=36;
-		srb->cmdlen=12;
+		srb->cmdlen=6; /*12*/
 		i=ss->transport(srb,ss);
 		USB_STOR_PRINTF("inquiry returns %d\n",i);
 		if(i==0)
@@ -853,8 +858,8 @@ static int usb_request_sense(ccb *srb,struct us_data *ss)
 	srb->cmd[1]=srb->lun<<5;
 	srb->cmd[4]=18;
 	srb->datalen=18;
-	srb->pdata=&srb->sense_buf[0];
-	srb->cmdlen=12;
+	srb->pdata = &srb->sense_buf[0];
+	srb->cmdlen=6; /*12*/
 	ss->transport(srb,ss);
 	USB_STOR_PRINTF("Request Sense returned %02X %02X %02X\n",srb->sense_buf[2],srb->sense_buf[12],srb->sense_buf[13]);
 	srb->pdata=(uchar *)ptr;
@@ -870,12 +875,12 @@ static int usb_test_unit_ready(ccb *srb,struct us_data *ss)
 		srb->cmd[0]=SCSI_TST_U_RDY;
 		srb->cmd[1]=srb->lun<<5;
 		srb->datalen=0;
-		srb->cmdlen=12;
+		srb->cmdlen=6; /*12*/
 		if(ss->transport(srb,ss)==USB_STOR_TRANSPORT_GOOD) {
 			return 0;
 		}
 		usb_request_sense (srb, ss);
-		wait_ms (100);
+		wait_ms (1000);
 	} while(retries--);
 
 	return -1;
@@ -890,7 +895,7 @@ static int usb_read_capacity(ccb *srb,struct us_data *ss)
 		srb->cmd[0]=SCSI_RD_CAPAC;
 		srb->cmd[1]=srb->lun<<5;
 		srb->datalen=8;
-		srb->cmdlen=12;
+		srb->cmdlen=10; /*12*/
 		if(ss->transport(srb,ss)==USB_STOR_TRANSPORT_GOOD) {
 			return 0;
 		}
@@ -901,7 +906,7 @@ static int usb_read_capacity(ccb *srb,struct us_data *ss)
 
 static int usb_read_10(ccb *srb,struct us_data *ss, unsigned long start, unsigned short blocks)
 {
-	memset(&srb->cmd[0],0,12);
+	memset(&srb->cmd[0],0,16);
 	srb->cmd[0]=SCSI_READ10;
 	srb->cmd[1]=srb->lun<<5;
 	srb->cmd[2]=((unsigned char) (start>>24))&0xff;
@@ -910,15 +915,37 @@ static int usb_read_10(ccb *srb,struct us_data *ss, unsigned long start, unsigne
 	srb->cmd[5]=((unsigned char) (start))&0xff;
 	srb->cmd[7]=((unsigned char) (blocks>>8))&0xff;
 	srb->cmd[8]=(unsigned char) blocks & 0xff;
-	srb->cmdlen=12;
+	srb->cmdlen=10; /*12 */
 	USB_STOR_PRINTF("read10: start %lx blocks %x\n",start,blocks);
 	return ss->transport(srb,ss);
 }
 
 
-#define USB_MAX_READ_BLK 20
+#ifdef CONFIG_USB_BIN_FIXUP
+/*
+ * Some USB storage devices queried for SCSI identification data respond with
+ * binary strings, which if output to the console freeze the terminal. The
+ * workaround is to modify the vendor and product strings read from such
+ * device with proper values (as reported by 'usb info').
+ *
+ * Vendor and product length limits are taken from the definition of
+ * block_dev_desc_t in include/part.h.
+ */
+static void usb_bin_fixup(struct usb_device_descriptor descriptor,
+				unsigned char vendor[],
+				unsigned char product[]) {
+	const unsigned char max_vendor_len = 40;
+	const unsigned char max_product_len = 20;
+	if (descriptor.idVendor == 0x0424 && descriptor.idProduct == 0x223a) {
+		strncpy ((char *)vendor, "SMSC", max_vendor_len);
+		strncpy ((char *)product, "Flash Media Cntrller", max_product_len);
+	}
+}
+#endif /* CONFIG_USB_BIN_FIXUP */
 
-unsigned long usb_stor_read(int device, unsigned long blknr, unsigned long blkcnt, unsigned long *buffer)
+#define USB_MAX_READ_BLK 20 /*20*/
+
+unsigned long usb_stor_read(int device, unsigned long blknr, unsigned long blkcnt, void *buffer)
 {
 	unsigned long start,blks, buf_addr;
 	unsigned short smallblks;
@@ -1000,16 +1027,17 @@ int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,struct us_data 
 	/* let's examine the device now */
 	iface = &dev->config.if_desc[ifnum];
 
+	USB_STOR_PRINTF("iVendor %X iProduct %X\n",dev->descriptor.idVendor,dev->descriptor.idProduct);
 #if 0
 	/* this is the place to patch some storage devices */
-	USB_STOR_PRINTF("iVendor %X iProduct %X\n",dev->descriptor.idVendor,dev->descriptor.idProduct);
 	if ((dev->descriptor.idVendor) == 0x066b && (dev->descriptor.idProduct) == 0x0103) {
 		USB_STOR_PRINTF("patched for E-USB\n");
 		protocol = US_PR_CB;
 		subclass = US_SC_UFI;	    /* an assumption */
 	}
 #endif
-
+    USB_STOR_PRINTF("devClass=%x  IFClass=%x IFSubClass=%x \n",dev->descriptor.bDeviceClass, iface->bInterfaceClass,
+                    iface->bInterfaceSubClass);
 	if (dev->descriptor.bDeviceClass != 0 ||
 			iface->bInterfaceClass != USB_CLASS_MASS_STORAGE ||
 			iface->bInterfaceSubClass < US_SC_MIN ||
@@ -1139,6 +1167,10 @@ int usb_stor_get_info(struct usb_device *dev,struct us_data *ss,block_dev_desc_t
 	    /* USB007 Mini-USB2 Flash Drive */
 	    (dev->descriptor.idVendor == 0x066f &&
 	     dev->descriptor.idProduct == 0x2010)
+	    ||
+	    /* SanDisk Corporation Cruzer Micro 20044318410546613953 */
+	    (dev->descriptor.idVendor == 0x0781 &&
+	     dev->descriptor.idProduct == 0x5151)
 	    )
 		USB_STOR_PRINTF("usb_stor_get_info: skipping RESET..\n");
 	else
@@ -1152,7 +1184,7 @@ int usb_stor_get_info(struct usb_device *dev,struct us_data *ss,block_dev_desc_t
 
 	if(usb_inquiry(pccb,ss))
 		return -1;
-
+    udelay(5000000);
 	perq = usb_stor_buf[0];
 	modi = usb_stor_buf[1];
 	if((perq & 0x1f) == 0x1f) {
@@ -1167,6 +1199,9 @@ int usb_stor_get_info(struct usb_device *dev,struct us_data *ss,block_dev_desc_t
 	dev_desc->vendor[8] = 0;
 	dev_desc->product[16] = 0;
 	dev_desc->revision[4] = 0;
+#ifdef CONFIG_USB_BIN_FIXUP
+	usb_bin_fixup(dev->descriptor, (uchar *)dev_desc->vendor, (uchar *)dev_desc->product);
+#endif /* CONFIG_USB_BIN_FIXUP */
 	USB_STOR_PRINTF("ISO Vers %X, Response Data %X\n",usb_stor_buf[2],usb_stor_buf[3]);
 	if(usb_test_unit_ready(pccb,ss)) {
 		printf("Device NOT ready\n   Request Sense returned %02X %02X %02X\n",pccb->sense_buf[2],pccb->sense_buf[12],pccb->sense_buf[13]);
@@ -1189,18 +1224,8 @@ int usb_stor_get_info(struct usb_device *dev,struct us_data *ss,block_dev_desc_t
 	if(cap[0]>(0x200000 * 10)) /* greater than 10 GByte */
 		cap[0]>>=16;
 #endif
-#ifdef LITTLEENDIAN
-	cap[0] = ((unsigned long)(
-		(((unsigned long)(cap[0]) & (unsigned long)0x000000ffUL) << 24) |
-		(((unsigned long)(cap[0]) & (unsigned long)0x0000ff00UL) <<  8) |
-		(((unsigned long)(cap[0]) & (unsigned long)0x00ff0000UL) >>  8) |
-		(((unsigned long)(cap[0]) & (unsigned long)0xff000000UL) >> 24) ));
-	cap[1] = ((unsigned long)(
-		(((unsigned long)(cap[1]) & (unsigned long)0x000000ffUL) << 24) |
-		(((unsigned long)(cap[1]) & (unsigned long)0x0000ff00UL) <<  8) |
-		(((unsigned long)(cap[1]) & (unsigned long)0x00ff0000UL) >>  8) |
-		(((unsigned long)(cap[1]) & (unsigned long)0xff000000UL) >> 24) ));
-#endif
+	cap[0] = cpu_to_be32(cap[0]);
+	cap[1] = cpu_to_be32(cap[1]);
 	/* this assumes bigendian! */
 	cap[0] += 1;
 	capacity = &cap[0];
@@ -1219,4 +1244,4 @@ int usb_stor_get_info(struct usb_device *dev,struct us_data *ss,block_dev_desc_t
 }
 
 #endif /* CONFIG_USB_STORAGE */
-#endif /* CFG_CMD_USB */
+#endif

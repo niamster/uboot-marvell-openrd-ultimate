@@ -28,14 +28,20 @@
  * PCI routines
  */
 
+/* #define DEBUG */
 #include <common.h>
-
 #ifdef CONFIG_PCI
-
 #include <command.h>
 #include <asm/processor.h>
 #include <asm/io.h>
 #include <pci.h>
+
+/* #define DEBUG */
+#ifdef DEBUG
+#define debug(x...) printf(x)
+#else
+#define debug(x...)
+#endif /* DEBUG */
 
 #define PCI_HOSE_OP(rw, size, type)					\
 int pci_hose_##rw##_config_##size(struct pci_controller *hose, 		\
@@ -141,8 +147,9 @@ struct pci_controller *pci_bus_to_hose (int bus)
 	for (hose = hose_head; hose; hose = hose->next)
 		if (bus >= hose->first_busno && bus <= hose->last_busno)
 			return hose;
-
+#ifndef CONFIG_MARVELL
 	printf("pci_bus_to_hose() failed\n");
+#endif
 	return NULL;
 }
 
@@ -423,6 +430,8 @@ int pci_hose_scan_bus(struct pci_controller *hose, int bus)
 	     dev <  PCI_BDF(bus,PCI_MAX_PCI_DEVICES-1,PCI_MAX_PCI_FUNCTIONS-1);
 	     dev += PCI_BDF(0,0,1))
 	{
+		
+#ifndef CONFIG_MARVELL
 		/* Skip our host bridge */
 		if ( dev == PCI_BDF(hose->first_busno,0,0) ) {
 #if defined(CONFIG_PCI_CONFIG_HOST_BRIDGE)              /* don't skip host bridge */
@@ -436,7 +445,7 @@ int pci_hose_scan_bus(struct pci_controller *hose, int bus)
 			continue; /* Skip our host bridge */
 #endif
 		}
-
+#endif /* CONFIG_MARVELL */
 		if (PCI_FUNC(dev) && !found_multi)
 			continue;
 

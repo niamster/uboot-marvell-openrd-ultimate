@@ -136,6 +136,7 @@ uchar default_environment[] = {
 #ifdef  CONFIG_EXTRA_ENV_SETTINGS
 	CONFIG_EXTRA_ENV_SETTINGS
 #endif
+	"run_diag="	"yes"	"\0"
 	"\0"
 };
 
@@ -258,7 +259,13 @@ void env_relocate (void)
 		gd->env_valid = 1;
 	}
 	else {
+#ifdef CONFIG_MARVELL
+        mvMPPConfigToSPI();
 		env_relocate_spec ();
+        mvMPPConfigToDefault();
+#else
+        env_relocate_spec ();
+#endif
 	}
 	gd->env_addr = (ulong)&(env_ptr->data);
 

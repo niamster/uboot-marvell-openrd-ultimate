@@ -264,6 +264,7 @@ int do_ext2load (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		ext2fs_close();
 		return(1);
 	}
+
 	if ((count < filelen) && (count != 0)) {
 	    filelen = count;
 	}

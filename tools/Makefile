@@ -21,9 +21,9 @@
 # MA 02111-1307 USA
 #
 
-BINS	= img2srec$(SFX) mkimage$(SFX) envcrc$(SFX) gen_eth_addr$(SFX) bmp_logo$(SFX)
+BINS	= img2srec$(SFX) mkimage$(SFX) envcrc$(SFX) gen_eth_addr$(SFX) bmp_logo$(SFX) doimage$(SFX)
 
-OBJS	= environment.o img2srec.o mkimage.o crc32.o envcrc.o gen_eth_addr.o bmp_logo.o
+OBJS	= environment.o img2srec.o mkimage.o crc32.o envcrc.o gen_eth_addr.o bmp_logo.o doimage.o
 
 ifeq ($(ARCH),mips)
 BINS   += inca-swap-bytes$(SFX)
@@ -105,12 +105,13 @@ endif
 # so that we can act intelligently.
 #
 include $(TOPDIR)/config.mk
+include $(TOPDIR)/include/config.mk
 
 #
 # Use native tools and options
 #
-CPPFLAGS   = -idirafter ../include -DTEXT_BASE=$(TEXT_BASE) -DUSE_HOSTCC
-CFLAGS     = $(HOST_CFLAGS) $(CPPFLAGS) -O
+CPPFLAGS   = -idirafter ../include -DTEXT_BASE=$(TEXT_BASE) -DUSE_HOSTCC $(MV_IMAGE_FLAGS)
+CFLAGS     = $(HOST_CFLAGS) $(CPPFLAGS) -O 
 AFLAGS	   = -D__ASSEMBLY__ $(CPPFLAGS)
 CC	   = $(HOSTCC)
 STRIP	   = $(HOSTSTRIP)
@@ -139,6 +140,10 @@ gen_eth_addr$(SFX):	gen_eth_addr.o
 
 bmp_logo$(SFX):	bmp_logo.o
 		$(CC) $(CFLAGS) $(HOST_LDFLAGS) -o $@ $^
+		$(STRIP) $@
+
+doimage$(SFX):	doimage.o
+		$(CC) -DMV_CPU_LE $(HOST_LDFLAGS) -o $@ $^
 		$(STRIP) $@
 
 inca-swap-bytes$(SFX):	inca-swap-bytes.o
@@ -198,6 +203,9 @@ crc32.c:
 $(LOGO_H):	bmp_logo $(LOGO_BMP)
 		./bmp_logo $(LOGO_BMP) >$@
 
+doimage.o:	doimage.c
+		$(CC) -g -DMV_CPU_LE -c $<
+
 #########################################################################
 
 .depend:	Makefile $(OBJS:.o=.c)
@@ -206,3 +214,11 @@ $(LOGO_H):	bmp_logo $(LOGO_BMP)
 sinclude .depend
 
 #########################################################################
+
+
+clean:	
+	find . -type f \
+                \( -name 'core' -o -name '*.bak' -o -name '*~' \
+                -o -name '*.o'  -o -name '*.a'  \) -print \
+                | xargs rm -f
+	rm -f $(ELF) $(SREC) $(BIN) $(DIS) bootstrap.map

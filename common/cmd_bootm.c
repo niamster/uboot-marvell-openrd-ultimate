@@ -38,6 +38,8 @@
 #include <ft_build.h>
 #endif
 
+extern unsigned int whoAmI(void);
+
  /*cmd_boot.c*/
  extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
 
@@ -567,8 +569,7 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 	cmdline = (char *)((sp - CFG_BARGSIZE) & ~0xF);
 	kbd = (bd_t *)(((ulong)cmdline - sizeof(bd_t)) & ~0xF);
 
-	if ((s = getenv("bootargs")) == NULL)
-		s = "";
+	if ((s = getenv("bootargs")) == NULL) s = "";
 
 	strcpy (cmdline, s);
 
@@ -578,6 +579,7 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 	*kbd = *(gd->bd);
 
 #ifdef	DEBUG
+	printf ("## cmdline is %s\n", cmdline);
 	printf ("## cmdline at 0x%08lX ... 0x%08lX\n", cmd_start, cmd_end);
 
 	do_bdinfo (NULL, 0, 0, NULL);
@@ -839,6 +841,16 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 }
 #endif /* CONFIG_PPC */
 
+#ifdef CONFIG_MARVELL
+char extraBootArgs[200];
+
+/* NetBSD Stage-2 Loader Parameters:
+*   r6: boot args string
+*/
+#define DECLARE_NETBSD_CMDLINE
+register volatile char *cmdline asm ("r6");
+#endif
+
 static void
 do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 		int	argc, char *argv[],
@@ -847,14 +859,19 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 		int	verify)
 {
 	DECLARE_GLOBAL_DATA_PTR;
+#ifdef CONFIG_MARVELL
+	DECLARE_NETBSD_CMDLINE;
+#else
+	char *cmdline;
+#endif
+	bd_t *bd = gd->bd;
+
 
 	image_header_t *hdr = &header;
 
 	void	(*loader)(bd_t *, image_header_t *, char *, char *);
 	image_header_t *img_addr;
 	char     *consdev;
-	char     *cmdline;
-
 
 	/*
 	 * Booting a (NetBSD) kernel image
@@ -887,9 +904,27 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 	if (argc > 2) {
 		ulong len;
 		int   i;
+#ifdef CONFIG_MARVELL
+		unsigned int mvBoardIdGet(void);
+		char buf[30];
+		sprintf(extraBootArgs ,"boardId=%x",mvBoardIdGet()); 
+
+		for (i = 0; i < 4; i++) 
+		{
+			sprintf(buf ," dram%d_start=%x",i, bd->bi_dram[i].start);
+			strcat(extraBootArgs, buf); 
+			sprintf(buf ," dram%d_size=%x",i, bd->bi_dram[i].size);
+			strcat(extraBootArgs, buf); 
+		}
+
+#endif
 
 		for (i=2, len=0 ; i<argc ; i+=1)
 			len += strlen (argv[i]) + 1;
+#ifdef CONFIG_MARVELL
+		/* Adding BoardId */
+		len += strlen(extraBootArgs) + 1;
+#endif
 		cmdline = malloc (len);
 
 		for (i=2, len=0 ; i<argc ; i+=1) {
@@ -898,11 +933,19 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 			strcpy (&cmdline[len], argv[i]);
 			len += strlen (argv[i]);
 		}
+#ifdef CONFIG_MARVELL
+		/* Adding BoardId */
+		if (i > 2) cmdline[len++] = ' ';
+		strcpy (&cmdline[len], extraBootArgs);
+		len += strlen (extraBootArgs);
+#endif
+		
+
 	} else if ((cmdline = getenv("bootargs")) == NULL) {
 		cmdline = "";
 	}
 
-	loader = (void (*)(bd_t *, image_header_t *, char *, char *)) hdr->ih_ep;
+	loader = (void (*)(bd_t *, image_header_t *, char *, char *))ntohl(hdr->ih_ep);
 
 	printf ("## Transferring control to NetBSD stage-2 loader (at address %08lx) ...\n",
 		(ulong)loader);
@@ -1017,7 +1060,16 @@ int do_bootd (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
 	int rcode = 0;
 #ifndef CFG_HUSH_PARSER
-	if (run_command (getenv ("bootcmd"), flag) < 0) rcode = 1;
+#if defined(CONFIG_MARVELL) && defined(CONFIG_MV78200)
+	if (whoAmI() == 1)
+	{
+		if (run_command (getenv ("bootcmd2"), flag) < 0) rcode = 1;
+	}
+	else
+#endif
+	{
+		if (run_command (getenv ("bootcmd"), flag) < 0) rcode = 1;
+	}
 #else
 	if (parse_string_outer(getenv("bootcmd"),
 		FLAG_PARSE_SEMICOLON | FLAG_EXIT_FROM_LOOP) != 0 ) rcode = 1;

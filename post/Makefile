@@ -22,14 +22,20 @@
 #
 
 
-SUBDIRS = cpu
+#SUBDIRS = cpu
 
 LIB	= libpost.a
 
 AOBJS	= cache_8xx.o
-COBJS	= cache.o codec.o cpu.o dsp.o ether.o
+COBJS	= cache.o codec.o cpu.o dsp.o ether.o 
 COBJS  += i2c.o memory.o post.o rtc.o
 COBJS  += spr.o sysmon.o tests.o uart.o
 COBJS  += usb.o watchdog.o
 
+ifeq ($(VENDOR),mv_feroceon)
+AOBJS = 
+COBJS = tests.o mv_post.o post.o
+endif
+
 include $(TOPDIR)/post/rules.mk
+include $(TOPDIR)/board/mv_feroceon/config_kw/mvRules.mk

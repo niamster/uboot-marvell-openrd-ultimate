@@ -278,7 +278,8 @@ void usb_show_tree_graph(struct usb_device *dev,char *pre)
 	pre[index++]= has_child ? '|' : ' ';
 	pre[index]=0;
 	printf(" %s (%s, %dmA)\n",usb_get_class_desc(dev->config.if_desc[0].bInterfaceClass),
-		dev->slow ? "1.5MBit/s" : "12MBit/s",dev->config.MaxPower * 2);
+		(dev->speed == USB_SPEED_LOW) ? "1.5MBit/s" : (dev->speed == USB_SPEED_FULL)
+		? "12MBit/s" : "480MBit/s", dev->config.MaxPower * 2);
 	if (strlen(dev->mf) ||
 	   strlen(dev->prod) ||
 	   strlen(dev->serial))
@@ -612,15 +613,15 @@ int do_usb (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 U_BOOT_CMD(
 	usb,	5,	1,	do_usb,
 	"usb     - USB sub-system\n",
-	"reset - reset (rescan) USB controller\n"
-	"usb stop [f]  - stop USB [f]=force stop\n"
+	"usb start - start the usb interface, including scan of the bus. Must be\n"
+    "       executed prior to using the USB, and should be executed only once.\n"
 	"usb tree  - show USB device tree\n"
 	"usb info [dev] - show available USB devices\n"
 	"usb storage  - show details of USB storage devices\n"
 	"usb dev [dev] - show or set current USB storage device\n"
 	"usb part [dev] - print partition table of one or all USB storage devices\n"
 	"usb read addr blk# cnt - read `cnt' blocks starting at block `blk#'\n"
-	"    to memory address `addr'\n"
+	"       to memory address `addr'\n"
 );
 
 

@@ -118,7 +118,7 @@ OBJCFLAGS += --gap-fill=0xff
 
 gccincdir := $(shell $(CC) -print-file-name=include)
 
-CPPFLAGS := $(DBGFLAGS) $(OPTFLAGS) $(RELFLAGS)		\
+CPPFLAGS += $(DBGFLAGS) $(OPTFLAGS) $(RELFLAGS)		\
 	-D__KERNEL__ -DTEXT_BASE=$(TEXT_BASE)		\
 	-I$(TOPDIR)/include				\
 	-fno-builtin -ffreestanding -nostdinc -isystem	\
@@ -183,7 +183,7 @@ export	TEXT_BASE PLATFORM_CPPFLAGS PLATFORM_RELFLAGS CPPFLAGS CFLAGS AFLAGS
 %.s:	%.S
 	$(CPP) $(AFLAGS) -o $@ $(CURDIR)/$<
 %.o:	%.S
-	$(CC) $(AFLAGS) -c -o $@ $(CURDIR)/$<
+	$(CC) $(AFLAGS) -c -o $@ $<
 %.o:	%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 

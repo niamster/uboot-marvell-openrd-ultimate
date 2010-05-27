@@ -33,6 +33,7 @@
 #include <common.h>
 #include <command.h>
 #include <ide.h>
+#include <asm/byteorder.h>
 #include "part_dos.h"
 
 #if ((CONFIG_COMMANDS & CFG_CMD_IDE)	|| \
@@ -45,6 +46,7 @@
  */
 static inline int le32_to_int(unsigned char *le32)
 {
+
     return ((le32[3] << 24) +
 	    (le32[2] << 16) +
 	    (le32[1] << 8) +
@@ -71,8 +73,8 @@ static void print_one_part (dos_partition_t *p, int ext_part_sector, int part_nu
 
 static int test_block_type(unsigned char *buffer)
 {
-	if((buffer[DOS_PART_MAGIC_OFFSET + 0] != 0x55) ||
-	    (buffer[DOS_PART_MAGIC_OFFSET + 1] != 0xaa) ) {
+	if((buffer[DOS_PART_MAGIC_OFFSET + 0] != MBR_MAGIC_BYTE0) ||
+	    (buffer[DOS_PART_MAGIC_OFFSET + 1] != MBR_MAGIC_BYTE1) ) {
 		return (-1);
 	} /* no DOS Signature at all */
 	if(strncmp((char *)&buffer[DOS_PBR_FSTYPE_OFFSET],"FAT",3)==0)
@@ -84,10 +86,9 @@ static int test_block_type(unsigned char *buffer)
 int test_part_dos (block_dev_desc_t *dev_desc)
 {
 	unsigned char buffer[DEFAULT_SECTOR_SIZE];
-
 	if ((dev_desc->block_read(dev_desc->dev, 0, 1, (ulong *) buffer) != 1) ||
-	    (buffer[DOS_PART_MAGIC_OFFSET + 0] != 0x55) ||
-	    (buffer[DOS_PART_MAGIC_OFFSET + 1] != 0xaa) ) {
+	    (buffer[DOS_PART_MAGIC_OFFSET + 0] != MBR_MAGIC_BYTE0) ||
+	    (buffer[DOS_PART_MAGIC_OFFSET + 1] != MBR_MAGIC_BYTE1) ) {
 		return (-1);
 	}
 	return (0);
@@ -171,8 +172,8 @@ static int get_partition_info_extended (block_dev_desc_t *dev_desc, int ext_part
 			dev_desc->dev, ext_part_sector);
 		return -1;
 	}
-	if (buffer[DOS_PART_MAGIC_OFFSET] != 0x55 ||
-		buffer[DOS_PART_MAGIC_OFFSET + 1] != 0xaa) {
+	if (buffer[DOS_PART_MAGIC_OFFSET] != MBR_MAGIC_BYTE0 ||
+		buffer[DOS_PART_MAGIC_OFFSET + 1] != MBR_MAGIC_BYTE1) {
 		printf ("bad MBR sector signature 0x%02x%02x\n",
 			buffer[DOS_PART_MAGIC_OFFSET],
 			buffer[DOS_PART_MAGIC_OFFSET + 1]);
@@ -189,6 +190,7 @@ static int get_partition_info_extended (block_dev_desc_t *dev_desc, int ext_part
 		if ((pt->sys_ind != 0) &&
 		    (part_num == which_part) &&
 		    (is_extended(pt->sys_ind) == 0)) {
+			info->boot_ind = (pt->boot_ind == 0x80) ? 1 : 0;
 			info->blksz = 512;
 			info->start = ext_part_sector + le32_to_int (pt->start4);
 			info->size  = le32_to_int (pt->size4);

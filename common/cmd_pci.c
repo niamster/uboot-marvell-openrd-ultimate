@@ -89,10 +89,11 @@ void pciinfo(int BusNum, int ShortPCIListing)
 				break;
 
 			dev = PCI_BDF(BusNum, Device, Function);
-
 			pci_read_config_word(dev, PCI_VENDOR_ID, &VendorID);
 			if ((VendorID == 0xFFFF) || (VendorID == 0x0000))
-				continue;
+            {
+            	continue;
+            }
 
 			if (!Function) pci_read_config_byte(dev, PCI_HEADER_TYPE, &HeaderType);
 

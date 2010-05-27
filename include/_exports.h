@@ -12,7 +12,14 @@ EXPORT_FUNC(udelay)
 EXPORT_FUNC(get_timer)
 EXPORT_FUNC(vprintf)
 EXPORT_FUNC(do_reset)
+#ifdef CONFIG_MARVELL
+EXPORT_FUNC(realloc)
+EXPORT_FUNC(calloc)
+EXPORT_FUNC(memalign)
+EXPORT_FUNC(mvGetRtcSec)
+#endif
 #if (CONFIG_COMMANDS & CFG_CMD_I2C)
 EXPORT_FUNC(i2c_write)
 EXPORT_FUNC(i2c_read)
 #endif	/* CFG_CMD_I2C */
+

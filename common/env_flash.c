@@ -267,9 +267,17 @@ int  env_init(void)
 	if(flash_probe() == 0)
 		goto bad_flash;
 #endif
-	if (crc32(0, env_ptr->data, ENV_SIZE) == env_ptr->crc) {
-		gd->env_addr  = (ulong)&(env_ptr->data);
-		gd->env_valid = 1;
+#ifdef CONFIG_MARVELL
+        mvMPPConfigToSPI();
+        if (crc32(0, env_ptr->data, ENV_SIZE) == env_ptr->crc) {
+            gd->env_addr  = (ulong)&(env_ptr->data);
+            gd->env_valid = 1;
+        mvMPPConfigToDefault();
+#else
+        if (crc32(0, env_ptr->data, ENV_SIZE) == env_ptr->crc) {
+            gd->env_addr  = (ulong)&(env_ptr->data);
+            gd->env_valid = 1;
+#endif
 		return(0);
 	}
 #ifdef CONFIG_OMAP2420H4

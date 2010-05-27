@@ -53,7 +53,8 @@ int ext2fs_set_blk_dev (block_dev_desc_t * rbdd, int part)
 
 
 int ext2fs_devread (int sector, int byte_offset, int byte_len, char *buf) {
-	char sec_buf[SECTOR_SIZE];
+	short sec_buffer[SECTOR_SIZE/sizeof(short)];
+	char *sec_buf = sec_buffer;
 	unsigned block_len;
 
 /*
@@ -96,8 +97,23 @@ int ext2fs_devread (int sector, int byte_offset, int byte_len, char *buf) {
 		sector++;
 	}
 
+	if (byte_len == 0)
+		return 1;
+
 	/*  read sector aligned part */
 	block_len = byte_len & ~(SECTOR_SIZE - 1);
+
+	if (block_len == 0) {
+		u8 p[SECTOR_SIZE];
+
+		block_len = SECTOR_SIZE;
+		ext2fs_block_dev_desc->block_read(ext2fs_block_dev_desc->dev,
+						  part_info.start + sector,
+						  1, (unsigned long *)p);
+		memcpy(buf, p, byte_len);
+		return 1;
+	}
+
 	if (ext2fs_block_dev_desc->block_read (ext2fs_block_dev_desc->dev,
 					       part_info.start + sector,
 					       block_len / SECTOR_SIZE,
@@ -106,6 +122,7 @@ int ext2fs_devread (int sector, int byte_offset, int byte_len, char *buf) {
 		printf (" ** ext2fs_devread() read error - block\n");
 		return (0);
 	}
+	block_len = byte_len & ~(SECTOR_SIZE - 1);
 	buf += block_len;
 	byte_len -= block_len;
 	sector += block_len / SECTOR_SIZE;

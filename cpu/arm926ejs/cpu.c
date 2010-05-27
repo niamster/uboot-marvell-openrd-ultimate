@@ -28,7 +28,6 @@
 /*
  * CPU specific code
  */
-
 #include <common.h>
 #include <command.h>
 #include <arm926ejs.h>
@@ -43,6 +42,7 @@ static unsigned long read_p15_c1 (void)
 		: "=r" (value)
 		:
 		: "memory");
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
 
 #ifdef MMU_DEBUG
 	printf ("p15/c1 is = %08lx\n", value);
@@ -112,20 +112,54 @@ int cleanup_before_linux (void)
 
 	disable_interrupts ();
 
+#ifdef CONFIG_MARVELL
+	/* turn off L2 Cache */
+	asm ("mrc p15, 1, %0, c15, c1, 0":"=r" (i));
+	i &= ~0x00400000;
+	asm ("mcr p15, 1, %0, c15, c1, 0": :"r" (i));
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
+	/* Clean L2 Cache */
+	asm ("mcr p15, 1, %0, c15, c9, 0": :"r" (i));
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
+	/* Drain write buffer */
+	asm ("mcr p15, 0, %0, c7, c10, 4": :"r" (i));
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
+#endif
+
 	/* turn off I/D-cache */
 	asm ("mrc p15, 0, %0, c1, c0, 0":"=r" (i));
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
 	i &= ~(C1_DC | C1_IC);
 	asm ("mcr p15, 0, %0, c1, c0, 0": :"r" (i));
+	
 
-	/* flush I/D-cache */
-	i = 0;
-	asm ("mcr p15, 0, %0, c7, c7, 0": :"r" (i));
+
+	/* Check if we are 926 or 946 */
+	asm ("mrc p15, 0, %0, c0, c0, 0":"=r" (i));
+	__asm__ __volatile__("nop;nop;nop;nop;nop;nop;nop");
+	
+
+	if (((i >> 4)&0xfff) == 0x926)
+	{
+		/* flush I/D-cache */
+		i = 0;
+		asm ("mcr p15, 0, %0, c7, c7, 0": :"r" (i));
+	}
+	else
+	{
+		/* flush I/D-cache */
+		i = 0;
+		asm ("mcr p15, 0, %0, c7, c5, 0": :"r" (i));
+		asm ("mcr p15, 0, %0, c7, c6, 0": :"r" (i));
+	}
 
 	return (0);
 }
 
 int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
+	extern void reset_cpu (ulong addr);
+
 	disable_interrupts ();
 	reset_cpu (0);
 	/*NOTREACHED*/
@@ -149,6 +183,21 @@ void icache_disable (void)
 	cp_delay ();
 	write_p15_c1 (reg & ~C1_IC);
 }
+void dcache_disable (void)
+{
+	ulong reg;
+
+	reg = read_p15_c1 ();
+	cp_delay ();
+	reg &= ~C1_DC;
+	write_p15_c1 (reg);
+
+}
+int dcache_status (void)
+{
+	return (read_p15_c1 () & C1_DC) != 0;
+}
+
 
 int icache_status (void)
 {

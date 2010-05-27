@@ -23,7 +23,7 @@
 
 #ifndef _MMC_H_
 #define _MMC_H_
-#include <asm/arch/mmc.h>
+
 
 int mmc_init(int verbose);
 int mmc_read(ulong src, uchar *dst, int size);

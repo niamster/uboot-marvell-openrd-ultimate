@@ -139,7 +139,7 @@ gd_t *global_data;
 #if GCC_VERSION < 3004
 static
 #endif /* GCC_VERSION */
-void __attribute__((unused)) dummy(void)
+void __attribute__((used)) dummy(void)
 {
 #include <_exports.h>
 }

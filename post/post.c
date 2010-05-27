@@ -354,6 +354,7 @@ int post_info (char *name)
 
 int post_log (char *format, ...)
 {
+#ifndef CONFIG_MARVELL
 	va_list args;
 	uint i;
 	char printbuffer[CFG_PBSIZE];
@@ -374,6 +375,7 @@ int post_log (char *format, ...)
 	puts (printbuffer);
 #endif
 
+#endif /* CONFIG_MARVELL */
 	return 0;
 }
 

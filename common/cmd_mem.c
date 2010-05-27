@@ -28,6 +28,7 @@
  */
 
 #include <common.h>
+#include <malloc.h>
 #include <command.h>
 #if (CONFIG_COMMANDS & CFG_CMD_MMC)
 #include <mmc.h>
@@ -429,8 +430,26 @@ int do_mem_cp ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		int rc;
 
 		puts ("Copy to Flash... ");
+#if defined(CONFIG_MARVELL)
+		/* If source addr is flash copy data to memory first */
+		if (addr2info(addr) != NULL)
+		{       char* tmp_buff;
+			int i;
+			if (NULL == (tmp_buff = malloc(count*size)))
+			{
+				puts (" Copy fail, NULL pointer buffer\n");
+				return (1);
+			}
+			for( i = 0 ; i < (count*size); i++)
+				*(tmp_buff + i) = *((char *)addr + i);
 
-		rc = flash_write ((char *)addr, dest, count*size);
+			rc = flash_write (tmp_buff, dest, count*size);
+			free(tmp_buff);
+		}
+		else
+#endif /* defined(CONFIG_MARVELL) */
+			rc = flash_write ((char *)addr, dest, count*size);
+
 		if (rc != 0) {
 			flash_perror (rc);
 			return (1);

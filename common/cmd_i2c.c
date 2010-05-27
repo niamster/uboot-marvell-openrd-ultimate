@@ -92,6 +92,7 @@
 /* Display values from last command.
  * Memory modify remembered values are different from display memory.
  */
+static uchar    i2c_dp_last_channel;
 static uchar	i2c_dp_last_chip;
 static uint	i2c_dp_last_addr;
 static uint	i2c_dp_last_alen;
@@ -117,19 +118,20 @@ extern int cmd_get_data_size(char* arg, int default_size);
 
 int do_i2c_md ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
-	u_char	chip;
+	u_char	chip, channel;
 	uint	addr, alen, length;
 	int	j, nbytes, linebytes;
 
 	/* We use the last specified parameters, unless new ones are
 	 * entered.
 	 */
+    channel= i2c_dp_last_channel;
 	chip   = i2c_dp_last_chip;
 	addr   = i2c_dp_last_addr;
 	alen   = i2c_dp_last_alen;
 	length = i2c_dp_last_length;
 
-	if (argc < 3) {
+    if (argc < 3) {
 		printf ("Usage:\n%s\n", cmdtp->usage);
 		return 1;
 	}
@@ -140,26 +142,27 @@ int do_i2c_md ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		 */
 		alen = 1;
 
+		channel = simple_strtoul(argv[1], NULL, 16);
 		/*
 		 * I2C chip address
 		 */
-		chip = simple_strtoul(argv[1], NULL, 16);
+		chip = simple_strtoul(argv[2], NULL, 16);
 
 		/*
 		 * I2C data address within the chip.  This can be 1 or
 		 * 2 bytes long.  Some day it might be 3 bytes long :-).
 		 */
-		addr = simple_strtoul(argv[2], NULL, 16);
+		addr = simple_strtoul(argv[3], NULL, 16);
 		alen = 1;
 		for(j = 0; j < 8; j++) {
-			if (argv[2][j] == '.') {
-				alen = argv[2][j+1] - '0';
+			if (argv[3][j] == '.') {
+				alen = argv[3][j+1] - '0';
 				if (alen > 4) {
 					printf ("Usage:\n%s\n", cmdtp->usage);
 					return 1;
 				}
 				break;
-			} else if (argv[2][j] == '\0') {
+			} else if (argv[3][j] == '\0') {
 				break;
 			}
 		}
@@ -168,8 +171,8 @@ int do_i2c_md ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		 * If another parameter, it is the length to display.
 		 * Length is the number of objects, not number of bytes.
 		 */
-		if (argc > 3)
-			length = simple_strtoul(argv[3], NULL, 16);
+		if (argc > 4)
+			length = simple_strtoul(argv[4], NULL, 16);
 	}
 
 	/*
@@ -180,12 +183,10 @@ int do_i2c_md ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	 */
 	nbytes = length;
 	do {
-		unsigned char	linebuf[DISP_LINE_LEN];
-		unsigned char	*cp;
-
+        unsigned char	linebuf[DISP_LINE_LEN];
+        unsigned char	*cp;
 		linebytes = (nbytes > DISP_LINE_LEN) ? DISP_LINE_LEN : nbytes;
-
-		if(i2c_read(chip, addr, alen, linebuf, linebytes) != 0) {
+		if(i2c_read(channel, chip, addr, alen, linebuf, linebytes) != 0) {
 			puts ("Error reading the chip.\n");
 		} else {
 			printf("%04x:", addr);
@@ -207,7 +208,7 @@ int do_i2c_md ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		}
 		nbytes -= linebytes;
 	} while (nbytes > 0);
-
+    i2c_dp_last_channel = channel;
 	i2c_dp_last_chip   = chip;
 	i2c_dp_last_addr   = addr;
 	i2c_dp_last_alen   = alen;
@@ -234,7 +235,7 @@ int do_i2c_nm ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
  */
 int do_i2c_mw ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
-	uchar	chip;
+	uchar	chip, channel;
 	ulong	addr;
 	uint	alen;
 	uchar	byte;
@@ -249,22 +250,23 @@ int do_i2c_mw ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	/*
  	 * Chip is always specified.
  	 */
-	chip = simple_strtoul(argv[1], NULL, 16);
+	channel = simple_strtoul(argv[1], NULL, 16);
+	chip = simple_strtoul(argv[2], NULL, 16);
 
 	/*
 	 * Address is always specified.
 	 */
-	addr = simple_strtoul(argv[2], NULL, 16);
+	addr = simple_strtoul(argv[3], NULL, 16);
 	alen = 1;
 	for(j = 0; j < 8; j++) {
-		if (argv[2][j] == '.') {
-			alen = argv[2][j+1] - '0';
+		if (argv[3][j] == '.') {
+			alen = argv[3][j+1] - '0';
 			if(alen > 4) {
 				printf ("Usage:\n%s\n", cmdtp->usage);
 				return 1;
 			}
 			break;
-		} else if (argv[2][j] == '\0') {
+		} else if (argv[3][j] == '\0') {
 			break;
 		}
 	}
@@ -272,19 +274,19 @@ int do_i2c_mw ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	/*
 	 * Value to write is always specified.
 	 */
-	byte = simple_strtoul(argv[3], NULL, 16);
+	byte = simple_strtoul(argv[4], NULL, 16);
 
 	/*
 	 * Optional count
 	 */
-	if(argc == 5) {
-		count = simple_strtoul(argv[4], NULL, 16);
+	if(argc == 6) {
+		count = simple_strtoul(argv[5], NULL, 16);
 	} else {
 		count = 1;
 	}
 
 	while (count-- > 0) {
-		if(i2c_write(chip, addr++, alen, &byte, 1) != 0) {
+		if(i2c_write(channel, chip, addr++, alen, &byte, 1) != 0) {
 			puts ("Error writing the chip.\n");
 		}
 		/*
@@ -322,7 +324,7 @@ int do_i2c_mw ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
  */
 int do_i2c_crc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
-	uchar	chip;
+	uchar	chip, channel;
 	ulong	addr;
 	uint	alen;
 	int	count;
@@ -339,22 +341,23 @@ int do_i2c_crc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	/*
  	 * Chip is always specified.
  	 */
-	chip = simple_strtoul(argv[1], NULL, 16);
+	channel = simple_strtoul(argv[1], NULL, 16);
+	chip = simple_strtoul(argv[2], NULL, 16);
 
 	/*
 	 * Address is always specified.
 	 */
-	addr = simple_strtoul(argv[2], NULL, 16);
+	addr = simple_strtoul(argv[3], NULL, 16);
 	alen = 1;
 	for(j = 0; j < 8; j++) {
-		if (argv[2][j] == '.') {
-			alen = argv[2][j+1] - '0';
+		if (argv[3][j] == '.') {
+			alen = argv[3][j+1] - '0';
 			if(alen > 4) {
 				printf ("Usage:\n%s\n", cmdtp->usage);
 				return 1;
 			}
 			break;
-		} else if (argv[2][j] == '\0') {
+		} else if (argv[3][j] == '\0') {
 			break;
 		}
 	}
@@ -362,7 +365,7 @@ int do_i2c_crc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	/*
 	 * Count is always specified
 	 */
-	count = simple_strtoul(argv[3], NULL, 16);
+	count = simple_strtoul(argv[4], NULL, 16);
 
 	printf ("CRC32 for %08lx ... %08lx ==> ", addr, addr + count - 1);
 	/*
@@ -372,7 +375,7 @@ int do_i2c_crc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	crc = 0;
 	err = 0;
 	while(count-- > 0) {
-		if(i2c_read(chip, addr, alen, &byte, 1) != 0) {
+		if(i2c_read(channel, chip, addr, alen, &byte, 1) != 0) {
 			err++;
 		}
 		crc = crc32 (crc, &byte, 1);
@@ -399,7 +402,7 @@ int do_i2c_crc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 static int
 mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 {
-	uchar	chip;
+	uchar	chip, channel;
 	ulong	addr;
 	uint	alen;
 	ulong	data;
@@ -408,7 +411,7 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 	int	j;
 	extern char console_buffer[];
 
-	if (argc != 3) {
+	if (argc != 4) {
 		printf ("Usage:\n%s\n", cmdtp->usage);
 		return 1;
 	}
@@ -420,6 +423,7 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 	 * We use the last specified parameters, unless new ones are
 	 * entered.
 	 */
+    channel= i2c_dp_last_channel;
 	chip = i2c_mm_last_chip;
 	addr = i2c_mm_last_addr;
 	alen = i2c_mm_last_alen;
@@ -431,25 +435,26 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 		 */
 		size = cmd_get_data_size(argv[0], 1);
 
+		channel = simple_strtoul(argv[1], NULL, 16);
 		/*
 	 	 * Chip is always specified.
 	 	 */
-		chip = simple_strtoul(argv[1], NULL, 16);
+		chip = simple_strtoul(argv[2], NULL, 16);
 
 		/*
 		 * Address is always specified.
 		 */
-		addr = simple_strtoul(argv[2], NULL, 16);
+		addr = simple_strtoul(argv[3], NULL, 16);
 		alen = 1;
 		for(j = 0; j < 8; j++) {
-			if (argv[2][j] == '.') {
-				alen = argv[2][j+1] - '0';
+			if (argv[3][j] == '.') {
+				alen = argv[3][j+1] - '0';
 				if(alen > 4) {
 					printf ("Usage:\n%s\n", cmdtp->usage);
 					return 1;
 				}
 				break;
-			} else if (argv[2][j] == '\0') {
+			} else if (argv[3][j] == '\0') {
 				break;
 			}
 		}
@@ -461,7 +466,7 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 	 */
 	do {
 		printf("%08lx:", addr);
-		if(i2c_read(chip, addr, alen, (uchar *)&data, size) != 0) {
+		if(i2c_read(channel, chip, addr, alen, (uchar *)&data, size) != 0) {
 			puts ("\nError reading the chip,\n");
 		} else {
 			data = cpu_to_be32(data);
@@ -510,7 +515,7 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 				 */
 				reset_cmd_timeout();
 #endif
-				if(i2c_write(chip, addr, alen, (uchar *)&data, size) != 0) {
+				if(i2c_write(channel, chip, addr, alen, (uchar *)&data, size) != 0) {
 					puts ("Error writing the chip.\n");
 				}
 #ifdef CFG_EEPROM_PAGE_WRITE_DELAY_MS
@@ -536,10 +541,17 @@ mod_i2c_mem(cmd_tbl_t *cmdtp, int incrflag, int flag, int argc, char *argv[])
 int do_i2c_probe (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
 	int j;
+#if defined(CONFIG_MARVELL)
+	int i = 0;
+#endif
 #if defined(CFG_I2C_NOPROBES)
 	int k, skip;
 #endif
 
+#if defined(CONFIG_MARVELL) && defined(MV78XX0)
+	for(i = 0; i < 2; i++) {
+	printf ("\nValid chip channel %d\n",i);
+#endif
 	puts ("Valid chip addresses:");
 	for(j = 0; j < 128; j++) {
 #if defined(CFG_I2C_NOPROBES)
@@ -553,10 +565,17 @@ int do_i2c_probe (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		if (skip)
 			continue;
 #endif
+#if defined(CONFIG_MARVELL)
+		if(i2c_probe(i,j) == 0) {
+#else
 		if(i2c_probe(j) == 0) {
+#endif
 			printf(" %02X", j);
 		}
 	}
+#if defined(CONFIG_MARVELL) && defined(MV78XX0)
+	}
+#endif
 	putc ('\n');
 
 #if defined(CFG_I2C_NOPROBES)
@@ -578,7 +597,7 @@ int do_i2c_probe (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
  */
 int do_i2c_loop(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
-	u_char	chip;
+	u_char	chip,channel;
 	ulong	alen;
 	uint	addr;
 	uint	length;
@@ -594,22 +613,23 @@ int do_i2c_loop(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	/*
 	 * Chip is always specified.
 	 */
-	chip = simple_strtoul(argv[1], NULL, 16);
+	channel = simple_strtoul(argv[1], NULL, 16);
+	chip = simple_strtoul(argv[2], NULL, 16);
 
 	/*
 	 * Address is always specified.
 	 */
-	addr = simple_strtoul(argv[2], NULL, 16);
+	addr = simple_strtoul(argv[3], NULL, 16);
 	alen = 1;
 	for(j = 0; j < 8; j++) {
-		if (argv[2][j] == '.') {
-			alen = argv[2][j+1] - '0';
+		if (argv[3][j] == '.') {
+			alen = argv[3][j+1] - '0';
 			if (alen > 4) {
 				printf ("Usage:\n%s\n", cmdtp->usage);
 				return 1;
 			}
 			break;
-		} else if (argv[2][j] == '\0') {
+		} else if (argv[3][j] == '\0') {
 			break;
 		}
 	}
@@ -618,7 +638,7 @@ int do_i2c_loop(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	 * Length is the number of objects, not number of bytes.
 	 */
 	length = 1;
-	length = simple_strtoul(argv[3], NULL, 16);
+	length = simple_strtoul(argv[4], NULL, 16);
 	if(length > sizeof(bytes)) {
 		length = sizeof(bytes);
 	}
@@ -628,13 +648,13 @@ int do_i2c_loop(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	 */
 	delay = 1000;
 	if (argc > 3) {
-		delay = simple_strtoul(argv[4], NULL, 10);
+		delay = simple_strtoul(argv[5], NULL, 10);
 	}
 	/*
 	 * Run the loop...
 	 */
 	while(1) {
-		if(i2c_read(chip, addr, alen, bytes, length) != 0) {
+		if(i2c_read(channel, chip, addr, alen, bytes, length) != 0) {
 			puts ("Error reading the chip.\n");
 		}
 		udelay(delay);
@@ -671,7 +691,7 @@ int do_sdram  ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
  	 */
 	chip = simple_strtoul(argv[1], NULL, 16);
 
-	if(i2c_read(chip, 0, 1, data, sizeof(data)) != 0) {
+	if(i2c_read(0, chip, 0, 1, data, sizeof(data)) != 0) {
 		puts ("No SDRAM Serial Presence Detect found.\n");
 		return 1;
 	}
@@ -877,33 +897,33 @@ int do_sdram  ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 /***************************************************/
 
 U_BOOT_CMD(
-	imd,	4,	1,	do_i2c_md,		\
+	imd,	5,	1,	do_i2c_md,		\
 	"imd     - i2c memory display\n",				\
-	"chip address[.0, .1, .2] [# of objects]\n    - i2c memory display\n" \
+	"I2C_channel chip address[.0, .1, .2] [# of objects]\n    - i2c memory display\n" \
 );
 
 U_BOOT_CMD(
- 	imm,	3,	1,	do_i2c_mm,
-	"imm     - i2c memory modify (auto-incrementing)\n",
-	"chip address[.0, .1, .2]\n"
+ 	imm,	4,	1,	do_i2c_mm,
+	"imm[.b, .s, .w, .l]     - i2c memory modify (auto-incrementing)\n",
+	"I2C_channel chip address[.0, .1, .2]\n"
 	"    - memory modify, auto increment address\n"
 );
 U_BOOT_CMD(
-	inm,	3,	1,	do_i2c_nm,
+	inm,	4,	1,	do_i2c_nm,
 	"inm     - memory modify (constant address)\n",
-	"chip address[.0, .1, .2]\n    - memory modify, read and keep address\n"
+	"I2C_channel chip address[.0, .1, .2]\n    - memory modify, read and keep address\n"
 );
 
 U_BOOT_CMD(
-	imw,	5,	1,	do_i2c_mw,
+	imw,	6,	1,	do_i2c_mw,
 	"imw     - memory write (fill)\n",
-	"chip address[.0, .1, .2] value [count]\n    - memory write (fill)\n"
+	"I2C_channel chip address[.0, .1, .2] value [count]\n    - memory write (fill)\n"
 );
 
 U_BOOT_CMD(
 	icrc32,	5,	1,	do_i2c_crc,
 	"icrc32  - checksum calculation\n",
-	"chip address[.0, .1, .2] count\n    - compute CRC32 checksum\n"
+	"I2C_channel chip address[.0, .1, .2] count\n    - compute CRC32 checksum\n"
 );
 
 U_BOOT_CMD(

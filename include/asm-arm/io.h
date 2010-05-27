@@ -193,7 +193,6 @@ extern void __readwrite_bug(const char *fn);
  * ioremap.
  */
 #ifdef __mem_pci
-
 #define readb(c) ({ unsigned int __v = __raw_readb(__mem_pci(c)); __v; })
 #define readw(c) ({ unsigned int __v = le16_to_cpu(__raw_readw(__mem_pci(c))); __v; })
 #define readl(c) ({ unsigned int __v = le32_to_cpu(__raw_readl(__mem_pci(c))); __v; })

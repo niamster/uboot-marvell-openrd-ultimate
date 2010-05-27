@@ -21,14 +21,19 @@
 # MA 02111-1307 USA
 #
 
-PLATFORM_RELFLAGS += -fno-strict-aliasing  -fno-common -ffixed-r8 \
-	-msoft-float
 
-PLATFORM_CPPFLAGS += -march=armv4
-# =========================================================================
-#
-# Supply options according to compiler version
-#
-# =========================================================================
-PLATFORM_CPPFLAGS +=$(call cc-option,-mapcs-32,-mabi=apcs-gnu)
-PLATFORM_RELFLAGS +=$(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,))
+ifeq ($(CROSS_COMPILE),arm-linux-)
+
+PLATFORM_RELFLAGS += -fno-strict-aliasing  -fno-common -ffixed-r8 \
+	-mshort-load-bytes -msoft-float
+
+PLATFORM_CPPFLAGS += -mapcs-32 -march=armv5
+
+else
+
+PLATFORM_RELFLAGS += -fno-strict-aliasing  -fno-common -ffixed-r8 \
+        -msoft-float
+
+PLATFORM_CPPFLAGS += -march=armv5t
+
+endif

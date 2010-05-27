@@ -59,7 +59,11 @@ void i2c_init_board(void);
  * Probe the given I2C chip address.  Returns 0 if a chip responded,
  * not 0 on failure.
  */
+#if defined(CONFIG_MARVELL)
+int i2c_probe (uchar chanNum, uchar chip);
+#else
 int i2c_probe(uchar chip);
+#endif
 
 /*
  * Read/Write interface:
@@ -73,8 +77,8 @@ int i2c_probe(uchar chip);
  *
  *   Returns: 0 on success, not 0 on failure
  */
-int i2c_read(uchar chip, uint addr, int alen, uchar *buffer, int len);
-int i2c_write(uchar chip, uint addr, int alen, uchar *buffer, int len);
+int i2c_read(uchar channel, uchar chip, uint addr, int alen, uchar *buffer, int len);
+int i2c_write(uchar channel, uchar chip, uint addr, int alen, uchar *buffer, int len);
 
 /*
  * Utility routines to read/write registers.

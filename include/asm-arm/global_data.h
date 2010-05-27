@@ -45,6 +45,15 @@ typedef	struct	global_data {
 #ifdef CONFIG_VFD
 	unsigned char	vfd_type;	/* display type */
 #endif
+#ifdef CONFIG_MARVELL
+	unsigned long  bus_clk;
+        unsigned int tclk;
+#if defined(CONFIG_POST)  || defined(CONFIG_LOGBUFFER) //DPS
+	unsigned long   post_init_f_time;  /* When post_init_f started */
+	unsigned long   post_log_word;  /* Record POST activities */
+
+#endif
+#endif
 #if 0
 	unsigned long	cpu_clk;	/* CPU clock in Hz!		*/
 	unsigned long	bus_clk;
@@ -52,6 +61,11 @@ typedef	struct	global_data {
 	unsigned long	reset_status;	/* reset status register at boot */
 #endif
 	void		**jt;		/* jump table */
+#ifdef CONFIG_MARVELL
+	unsigned long	ram_size;	/* RAM size */
+	unsigned int ddr_clk;
+#endif
+
 } gd_t;
 
 /*
@@ -61,6 +75,7 @@ typedef	struct	global_data {
 #define	GD_FLG_DEVINIT	0x00002		/* Devices have been initialized	*/
 #define	GD_FLG_SILENT	0x00004		/* Silent mode				*/
 
-#define DECLARE_GLOBAL_DATA_PTR     register volatile gd_t *gd asm ("r8")
+#define DECLARE_GLOBAL_DATA_PTR     
+register volatile gd_t *gd asm ("r8");
 
 #endif /* __ASM_GBL_DATA_H */

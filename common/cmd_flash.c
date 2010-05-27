@@ -45,6 +45,10 @@ int find_dev_and_part(const char *id, struct mtd_device **dev,
 
 extern flash_info_t flash_info[];	/* info for FLASH chips */
 
+#if defined (CONFIG_MARVELL)		
+extern int mv_flash_real_protect_bank(flash_info_t *info, int prot);
+#endif
+
 /*
  * The user interface starts numbering for Flash banks with 1
  * for historical reasons.
@@ -586,6 +590,7 @@ int do_protect (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 			puts ("missing or unknown FLASH type\n");
 			return 1;
 		}
+
 		for (i=0; i<info->sector_count; ++i) {
 #if defined(CFG_FLASH_PROTECTION)
 			if (flash_real_protect(info, i, p))
@@ -594,7 +599,8 @@ int do_protect (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 #else
 			info->protect[i] = p;
 #endif	/* CFG_FLASH_PROTECTION */
-		}
+		}        
+		
 
 #if defined(CFG_FLASH_PROTECTION)
 		if (!rcode) puts (" done\n");

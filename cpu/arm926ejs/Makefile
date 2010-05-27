@@ -22,6 +22,7 @@
 #
 
 include $(TOPDIR)/config.mk
+include $(TOPDIR)/board/mv_feroceon/$(BOARD)/mvRules.mk
 
 LIB	= lib$(CPU).a
 

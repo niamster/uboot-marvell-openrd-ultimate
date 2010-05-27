@@ -27,6 +27,8 @@
 #include <common.h>
 #endif
 
+#include <watchdog.h>
+
 #ifdef CONFIG_POST
 
 #define POST_POWERON		0x01	/* test runs on power-on booting */

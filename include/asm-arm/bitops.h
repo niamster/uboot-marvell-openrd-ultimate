@@ -91,6 +91,15 @@ static inline int test_bit(int nr, const void * addr)
     return ((unsigned char *) addr)[nr >> 3] & (1U << (nr & 7));
 }
 
+/* Return the bit position of the most significant 1 bit in a word */
+extern __inline__ int __ilog2(unsigned int x)
+{
+	int lz;
+
+	asm ("clz %0,%1" : "=r" (lz) : "r" (x));
+	return 31 - lz;
+}
+
 /*
  * ffz = Find First Zero in word. Undefined if no zero exists,
  * so code should check against ~0UL first..

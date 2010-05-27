@@ -39,6 +39,10 @@
 #define DOS_MBR	0
 #define DOS_PBR	1
 
+#define MBR_MAGIC_BYTE0		0x55
+#define MBR_MAGIC_BYTE1		0xAA
+
+
 typedef struct dos_partition {
 	unsigned char boot_ind;		/* 0x80 - active			*/
 	unsigned char head;		/* starting head			*/

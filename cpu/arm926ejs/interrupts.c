@@ -39,14 +39,22 @@
 #include <arm926ejs.h>
 #include <asm/proc-armv/ptrace.h>
 
+extern void reset_cpu(ulong addr);
 #define TIMER_LOAD_VAL 0xffffffff
 
 /* macro to read the 32 bit timer */
 #ifdef CONFIG_OMAP
 #define READ_TIMER (*(volatile ulong *)(CFG_TIMERBASE+8))
 #endif
+#ifdef CONFIG_INTEGRATOR
+#define READ_TIMER (*(volatile ulong *)(CFG_TIMERBASE+4))
+#endif
 #ifdef CONFIG_VERSATILE
 #define READ_TIMER (*(volatile ulong *)(CFG_TIMERBASE+4))
+#endif
+#ifdef CONFIG_MARVELL
+#include "cntmr/mvCntmr.h"
+#define READ_TIMER (mvCntmrRead(UBOOT_CNTR)/(mvTclkGet()/1000))
 #endif
 
 #ifdef CONFIG_USE_IRQ
@@ -202,7 +210,20 @@ int interrupt_init (void)
 	val = MPUTIM_ST | MPUTIM_AR | MPUTIM_CLOCK_ENABLE | (CFG_PVT << MPUTIM_PTV_BIT);
 	*((int32_t *) (CFG_TIMERBASE + CNTL_TIMER)) = val;
 #endif	/* CONFIG_OMAP */
+#ifdef CONFIG_INTEGRATOR
+	/* Load timer with initial value */
+	*(volatile ulong *)(CFG_TIMERBASE + 0) = TIMER_LOAD_VAL;
+	/* Set timer to be enabled, free-running, no interrupts, 256 divider */
+	*(volatile ulong *)(CFG_TIMERBASE + 8) = 0x8C;
+#endif	/* CONFIG_INTEGRATOR */
+#ifdef CONFIG_MARVELL
+	/* init the counter */
+	MV_CNTMR_CTRL cntmr;
+	cntmr.enable = 1;
+	cntmr.autoEnable = 1;
+	mvCntmrStart(UBOOT_CNTR, TIMER_LOAD_VAL, &cntmr);
 
+#endif /* #ifdef CONFIG_MARVELL */
 #ifdef CONFIG_VERSATILE
 	*(volatile ulong *)(CFG_TIMERBASE + 0) = CFG_TIMER_RELOAD;	/* TimerLoad */
 	*(volatile ulong *)(CFG_TIMERBASE + 4) = CFG_TIMER_RELOAD;	/* TimerValue */
@@ -233,13 +254,16 @@ void set_timer (ulong t)
 {
 	timestamp = t;
 }
-
+#ifndef CONFIG_MARVELL
 /* delay x useconds AND perserve advance timstamp value */
 void udelay (unsigned long usec)
 {
 	ulong tmo, tmp;
-
-	if(usec >= 1000){		/* if "big" number, spread normalization to seconds */
+	if(usec >= 1000000){               /* if "big" number, spread normalization to seconds */
+		tmo = usec / 1000000;      /* start to normalize for usec to ticks per sec */
+		tmo *= CFG_HZ;          /* find number of "ticks" to wait to achieve target */
+	
+	}else if(usec >= 1000){		/* if "big" number, spread normalization to seconds */
 		tmo = usec / 1000;	/* start to normalize for usec to ticks per sec */
 		tmo *= CFG_HZ;		/* find number of "ticks" to wait to achieve target */
 		tmo /= 1000;		/* finish normalize. */
@@ -257,6 +281,26 @@ void udelay (unsigned long usec)
 	while (get_timer_masked () < tmo)/* loop till event */
 		/*NOP*/;
 }
+#else
+void udelay (unsigned long usec)
+{
+    uint current;
+    ulong delayticks;
+
+    current = mvCntmrRead(UBOOT_CNTR);
+    delayticks = (usec * (mvTclkGet()/ 1000000));
+    if(current < delayticks)
+    {   
+        delayticks -= current;
+        while(mvCntmrRead(UBOOT_CNTR) < current);
+        while((TIMER_LOAD_VAL - delayticks) < mvCntmrRead(UBOOT_CNTR));
+    }
+    else
+    {
+        while(mvCntmrRead(UBOOT_CNTR) > (current-delayticks));
+    }
+}
+#endif
 
 void reset_timer_masked (void)
 {
@@ -278,7 +322,11 @@ ulong get_timer_masked (void)
 		 * (TLV-now) amount of time after passing though -1
 		 * nts = new "advancing time stamp"...it could also roll and cause problems.
 		 */
+#ifdef CONFIG_MARVELL
+		timestamp += lastdec + (TIMER_LOAD_VAL/(mvTclkGet()/1000))- now;
+#else
 		timestamp += lastdec + TIMER_LOAD_VAL - now;
+#endif
 	}
 	lastdec = now;
 

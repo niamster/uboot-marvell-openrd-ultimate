@@ -32,6 +32,7 @@
 
 /*cmd_boot.c*/
 extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
+extern void mvEgigaStrToMac( char *source , char *dest );
 
 #if defined (CONFIG_SETUP_MEMORY_TAGS) || \
     defined (CONFIG_CMDLINE_TAG) || \
@@ -39,7 +40,10 @@ extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
     defined (CONFIG_SERIAL_TAG) || \
     defined (CONFIG_REVISION_TAG) || \
     defined (CONFIG_VFD) || \
-    defined (CONFIG_LCD)
+    defined (CONFIG_LCD) ||	\
+    defined (CONFIG_MARVELL_TAG)
+
+
 static void setup_start_tag (bd_t *bd);
 
 # ifdef CONFIG_SETUP_MEMORY_TAGS
@@ -60,6 +64,9 @@ static void setup_end_tag (bd_t *bd);
 static void setup_videolfb_tag (gd_t *gd);
 # endif
 
+#if defined (CONFIG_MARVELL_TAG)
+static void setup_marvell_tag(void);
+#endif
 
 static struct tag *params;
 #endif /* CONFIG_SETUP_MEMORY_TAGS || CONFIG_CMDLINE_TAG || CONFIG_INITRD_TAG */
@@ -87,10 +94,23 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
 	bd_t *bd = gd->bd;
 
 #ifdef CONFIG_CMDLINE_TAG
-	char *commandline = getenv ("bootargs");
+	char *commandline;
+#ifdef CONFIG_MARVELL
+#ifdef MV78XX0
+	if (whoAmI() == 0)
+#endif
+		commandline = getenv ("bootargs");
+#ifdef MV78XX0
+	else
+		commandline = getenv ("bootargs2");
+#endif
+#else
+	commandline = getenv ("bootargs");
+#endif
 #endif
 
 	theKernel = (void (*)(int, int, uint))ntohl(hdr->ih_ep);
+	debug(" theKernel %x\n", theKernel);
 
 	/*
 	 * Check if there is an initrd image
@@ -124,7 +144,7 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
 		checksum = ntohl (hdr->ih_hcrc);
 		hdr->ih_hcrc = 0;
 
-		if (crc32 (0, (char *) data, len) != checksum) {
+		if (crc32 (0, (const char *) data, len) != checksum) {
 			printf ("Bad Header Checksum\n");
 			SHOW_BOOT_PROGRESS (-11);
 			do_reset (cmdtp, flag, argc, argv);
@@ -148,7 +168,7 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
 			ulong csum = 0;
 
 			printf ("   Verifying Checksum ... ");
-			csum = crc32 (0, (char *) data, len);
+			csum = crc32 (0, (const char *) data, len);
 			if (csum != ntohl (hdr->ih_dcrc)) {
 				printf ("Bad Data CRC\n");
 				SHOW_BOOT_PROGRESS (-12);
@@ -231,7 +251,8 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
     defined (CONFIG_SERIAL_TAG) || \
     defined (CONFIG_REVISION_TAG) || \
     defined (CONFIG_LCD) || \
-    defined (CONFIG_VFD)
+    defined (CONFIG_VFD) || \
+    defined (CONFIG_MARVELL_TAG)
 	setup_start_tag (bd);
 #ifdef CONFIG_SERIAL_TAG
 	setup_serial_tag (&params);
@@ -251,6 +272,12 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
 #endif
 #if defined (CONFIG_VFD) || defined (CONFIG_LCD)
 	setup_videolfb_tag ((gd_t *) gd);
+#endif
+#if defined (CONFIG_MARVELL_TAG)
+        /* Linux open port doesn't support the Marvell TAG */
+	char *env = getenv("mainlineLinux");
+	if(!env || ((strcmp(env,"no") == 0) ||  (strcmp(env,"No") == 0)))
+	    setup_marvell_tag ();
 #endif
 	setup_end_tag (bd);
 #endif
@@ -277,7 +304,8 @@ void do_bootm_linux (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[],
     defined (CONFIG_SERIAL_TAG) || \
     defined (CONFIG_REVISION_TAG) || \
     defined (CONFIG_LCD) || \
-    defined (CONFIG_VFD)
+    defined (CONFIG_VFD) || \
+    defined (CONFIG_MARVELL_TAG)
 static void setup_start_tag (bd_t *bd)
 {
 	params = (struct tag *) bd->bi_boot_params;
@@ -376,6 +404,93 @@ static void setup_videolfb_tag (gd_t *gd)
 	params = tag_next (params);
 }
 #endif /* CONFIG_VFD || CONFIG_LCD */
+
+#if defined(CONFIG_MARVELL_TAG)
+static void setup_marvell_tag (void)
+{
+	char *env;
+	char temp[20];
+	int i;
+	unsigned int boardId;
+	params->hdr.tag = ATAG_MARVELL;
+	params->hdr.size = tag_size (tag_mv_uboot);
+
+	params->u.mv_uboot.uboot_version = VER_NUM;
+    if(strcmp(getenv("nandEcc"), "4bit") == 0)
+    {
+        params->u.mv_uboot.nand_ecc = 4;
+    }
+    else if(strcmp(getenv("nandEcc"), "1bit") == 0)
+    {
+        params->u.mv_uboot.nand_ecc = 1;
+    }
+
+	extern unsigned int mvBoardIdGet(void);	
+
+	boardId = mvBoardIdGet();
+
+	params->u.mv_uboot.uboot_version |= boardId;
+
+	params->u.mv_uboot.tclk = CFG_TCLK;
+	params->u.mv_uboot.sysclk = CFG_BUS_CLK;
+	
+#if defined(MV78XX0)
+	/* Dual CPU Firmware load address */
+        env = getenv("fw_image_base");
+        if(env)
+		params->u.mv_uboot.fw_image_base = simple_strtoul(env, NULL, 16);
+	else
+		params->u.mv_uboot.fw_image_base = 0;
+
+	/* Dual CPU Firmware size */
+        env = getenv("fw_image_size");
+        if(env)
+		params->u.mv_uboot.fw_image_size = simple_strtoul(env, NULL, 16);
+	else
+		params->u.mv_uboot.fw_image_size = 0;
+#endif
+
+#if defined(MV_INCLUDE_USB)
+    extern unsigned int mvCtrlUsbMaxGet(void);
+
+    for (i = 0 ; i < mvCtrlUsbMaxGet(); i++)
+    {
+	sprintf( temp, "usb%dMode", i);
+	env = getenv(temp);
+	if((!env) || (strcmp(env,"Host") == 0 ) || (strcmp(env,"host") == 0) )
+		params->u.mv_uboot.isUsbHost |= (1 << i);
+	else
+		params->u.mv_uboot.isUsbHost &= ~(1 << i);
+
+    }
+#endif /*#if defined(MV_INCLUDE_USB)*/
+#if defined(MV_INCLUDE_GIG_ETH) || defined(MV_INCLUDE_UNM_ETH)
+	extern unsigned int mvCtrlEthMaxPortGet(void);
+	extern int mvMacStrToHex(const char* macStr, unsigned char* macHex);
+
+	for (i = 0 ;i < 4;i++)
+	{
+		memset(params->u.mv_uboot.macAddr[i], 0, sizeof(params->u.mv_uboot.macAddr[i]));
+		params->u.mv_uboot.mtu[i] = 0; 
+	}
+
+	for (i = 0 ;i < mvCtrlEthMaxPortGet();i++)
+	{
+	    sprintf( temp,(i ? "eth%daddr" : "ethaddr"), i);
+	    env = getenv(temp);
+	    if (env)
+		mvMacStrToHex(env, params->u.mv_uboot.macAddr[i]);
+
+	    sprintf( temp,(i ? "eth%dmtu" : "ethmtu"), i);
+	    env = getenv(temp);
+	    if (env)
+		params->u.mv_uboot.mtu[i] = simple_strtoul(env, NULL, 10); 
+	}
+#endif /* (MV_INCLUDE_GIG_ETH) || defined(MV_INCLUDE_UNM_ETH) */
+
+	params = tag_next (params);
+}	
+#endif
 
 #ifdef CONFIG_SERIAL_TAG
 void setup_serial_tag (struct tag **tmp)

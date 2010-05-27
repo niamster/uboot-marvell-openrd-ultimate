@@ -31,6 +31,8 @@
 #include <command.h>
 #include <image.h>
 #include <asm/byteorder.h>
+#ifndef CONFIG_MARVELL  /* Marvell has a board specific IDE support */
+
 #if defined(CONFIG_IDE_8xx_DIRECT) || defined(CONFIG_IDE_PCMCIA)
 # include <pcmcia.h>
 #endif
@@ -2066,3 +2068,5 @@ U_BOOT_CMD(
 );
 
 #endif	/* CONFIG_COMMANDS & CFG_CMD_IDE */
+
+#endif

@@ -19,7 +19,7 @@
 
 #include <pci.h>
 
-#undef DEBUG
+/* #define DEBUG */
 #ifdef DEBUG
 #define DEBUGF(x...) printf(x)
 #else
@@ -53,14 +53,16 @@ int pciauto_region_allocate(struct pci_region* res, unsigned int size, unsigned 
 
 	addr = ((res->bus_lower - 1) | (size - 1)) + 1;
 
+	DEBUGF("addr 0x%x size 0x%x\n",addr, size);
+	DEBUGF("res->bus_start 0x%x res->size 0x%x\n",res->bus_start, res->size);
 	if (addr - res->bus_start + size > res->size) {
-		DEBUGF("No room in resource");
+		DEBUGF("No room in resource\n");
 		goto error;
 	}
 
 	res->bus_lower = addr + size;
 
-	DEBUGF("address=0x%lx", addr);
+	DEBUGF("address=0x%lx\n", addr);
 
 	*bar = addr;
 	return 0;

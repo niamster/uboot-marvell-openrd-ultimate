@@ -187,7 +187,8 @@ netboot_common (proto_t proto, cmd_tbl_t *cmdtp, int argc, char *argv[])
 		return 1;
 	}
 
-	if ((size = NetLoop(proto)) < 0)
+	size = NetLoop(proto);
+	if (size < 0)
 		return 1;
 
 	/* NetLoop ok, update environment */

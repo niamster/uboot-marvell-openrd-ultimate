@@ -36,12 +36,15 @@
 
 #include <post.h>
 
+
 #if defined(CONFIG_BOOT_RETRY_TIME) && defined(CONFIG_RESET_TO_RETRY)
 extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);		/* for do_reset() prototype */
 #endif
 
 extern int do_bootd (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
-
+#if defined(CONFIG_MARVELL)
+extern unsigned int whoAmI(void);
+#endif
 
 #define MAX_DELAY_STOP_STR 32
 
@@ -73,6 +76,7 @@ static int      retry_time = -1; /* -1 so can call readline before main_loop */
 int do_mdm_init = 0;
 extern void mdm_init(void); /* defined in board.c */
 #endif
+extern int g_stack_cachable;
 
 /***************************************************************************
  * Watch for 'delay' seconds for autoboot stop or autoboot delay string.
@@ -323,9 +327,17 @@ void main_loop (void)
 	char bcs_set[16];
 #endif /* CONFIG_BOOTCOUNT_LIMIT */
 
+#if defined(CONFIG_MARVELL)
+    if (g_stack_cachable == 1)
+    {/* set the stack to be cachable */
+                __asm__ __volatile__ ( " orr  sp, sp, #0x80000000 " :  );
+    }
+#endif /* CONFIG_MARVELL */
 #if defined(CONFIG_VFD) && defined(VFD_TEST_LOGO)
 	ulong bmp = 0;		/* default bitmap */
 	extern int trab_vfd (ulong bitmap);
+
+
 
 #ifdef CONFIG_MODEM_SUPPORT
 	if (do_mdm_init)
@@ -408,10 +420,33 @@ void main_loop (void)
 	}
 	else
 #endif /* CONFIG_BOOTCOUNT_LIMIT */
+#if defined(CONFIG_MARVELL)
+#ifdef MV78XX0
+	    if (whoAmI() == 0)
+#endif
+	    {
 		s = getenv ("bootcmd");
+	    }
+#ifdef MV78200
+	    else
+	    {
+		s = getenv ("bootcmd2");
+	    }
+#endif
+#else
+		s = getenv ("bootcmd");
+#endif
 
 	debug ("### main_loop: bootcmd=\"%s\"\n", s ? s : "<UNDEFINED>");
 
+#if defined (CONFIG_MARVELL) && (defined(MV_88F6183) || defined(MV_88F6183L))
+	/* 6183 UART work around - need incase uart pin's left unconnected */
+	if (tstc())
+		(void) getc();  /* consume input	*/
+#endif
+#if defined (RD_88F6281A_SHEEVA_PLUG)
+        (*((volatile unsigned int*)(0xf1010140))) &= (~0x20000);
+#endif
 	if (bootdelay >= 0 && s && !abortboot (bootdelay)) {
 # ifdef CONFIG_AUTOBOOT_KEYED
 		int prev = disable_ctrlc(1);	/* disable Control C checking */
@@ -920,6 +955,19 @@ int run_command (const char *cmd, int flag)
 
 		/* Extract arguments */
 		argc = parse_line (finaltoken, argv);
+
+                #if defined(CONFIG_MARVELL)
+                if(enaMonExt()){
+                        if ((cmdtp = find_cmd(argv[0])) == NULL) {
+                                int i;
+                                argv[argc+1]= NULL;
+                                for(i = argc; i > 0; i--){
+                                        argv[i] = argv[i-1];}
+                                argv[0] = "FSrun";
+                                argc++;
+                        }
+                }
+                #endif
 
 		/* Look up command in command table */
 		if ((cmdtp = find_cmd(argv[0])) == NULL) {

@@ -30,7 +30,8 @@ LOAD_ADDR = 0x40000
 endif
 
 ifeq ($(ARCH),arm)
-LOAD_ADDR = 0xc100000
+#LOAD_ADDR = 0xc100000
+LOAD_ADDR = 0x100000
 endif
 
 ifeq ($(ARCH),mips)
@@ -54,6 +55,7 @@ LOAD_ADDR = 0x80F00000
 endif
 
 include $(TOPDIR)/config.mk
+include $(TOPDIR)/include/config.mk
 
 SREC	= hello_world.srec
 BIN	= hello_world.bin hello_world

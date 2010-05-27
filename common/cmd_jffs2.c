@@ -91,7 +91,6 @@
 #include <command.h>
 #include <malloc.h>
 #include <jffs2/jffs2.h>
-#include <linux/mtd/nand.h>
 #include <linux/list.h>
 #include <linux/ctype.h>
 
@@ -99,11 +98,19 @@
 
 #include <cramfs/cramfs_fs.h>
 
+#if (CONFIG_COMMANDS & CFG_CMD_NAND)
+#ifdef CFG_NAND_LEGACY
+#include <linux/mtd/nand_legacy.h>
+#else /* !CFG_NAND_LEGACY */
+#include <linux/mtd/nand.h>
+#include <nand.h>
+#endif /* !CFG_NAND_LEGACY */
+#endif /* (CONFIG_COMMANDS & CFG_CMD_NAND) */
 /* enable/disable debugging messages */
-#define	DEBUG
-#undef	DEBUG
+#define	DEBUG_JFFS
+#undef	DEBUG_JFFS
 
-#ifdef  DEBUG
+#ifdef  DEBUG_JFFS
 # define DEBUGF(fmt, args...)	printf(fmt ,##args)
 #else
 # define DEBUGF(fmt, args...)
@@ -123,7 +130,7 @@
 
 /* this flag needs to be set in part_info struct mask_flags
  * field for read-only partitions */
-#define MTD_WRITEABLE		1
+#define MTD_WRITEABLE_CMD		1
 
 #ifdef CONFIG_JFFS2_CMDLINE
 /* default values for mtdids and mtdparts variables */
@@ -365,10 +372,9 @@ static int part_validate_nand(struct mtdids *id, struct part_info *part)
 {
 #if defined(CONFIG_JFFS2_NAND) && (CONFIG_COMMANDS & CFG_CMD_NAND)
 	/* info for NAND chips */
-	extern struct nand_chip nand_dev_desc[CFG_MAX_NAND_DEVICE];
-	struct nand_chip *nand;
+	nand_info_t *nand;
 
-	nand = &nand_dev_desc[id->num];
+	nand = &nand_info[id->num];
 
 	if ((unsigned long)(part->offset) % nand->erasesize) {
 		printf("%s%d: partition (%s) start offset alignment incorrect\n",
@@ -464,7 +470,9 @@ static int part_del(struct mtd_device *dev, struct part_info *part)
 		}
 	}
 
+#ifdef CFG_NAND_LEGACY
 	jffs2_free_cache(part);
+#endif
 	list_del(&part->link);
 	free(part);
 	dev->num_parts--;
@@ -491,7 +499,9 @@ static void part_delall(struct list_head *head)
 	list_for_each_safe(entry, n, head) {
 		part_tmp = list_entry(entry, struct part_info, link);
 
+#ifdef CFG_NAND_LEGACY
 		jffs2_free_cache(part_tmp);
+#endif
 		list_del(entry);
 		free(part_tmp);
 	}
@@ -646,7 +656,7 @@ static int part_parse(const char *const partdef, const char **ret, struct part_i
 	/* test for options */
 	mask_flags = 0;
 	if (strncmp(p, "ro", 2) == 0) {
-		mask_flags |= MTD_WRITEABLE;
+		mask_flags |= MTD_WRITEABLE_CMD;
 		p += 2;
 	}
 
@@ -713,6 +723,7 @@ static int device_validate(u8 type, u8 num, u32 *size)
 		if (num < CFG_MAX_FLASH_BANKS) {
 			extern flash_info_t flash_info[];
 			*size = flash_info[num].size;
+
 			return 0;
 		}
 
@@ -724,8 +735,12 @@ static int device_validate(u8 type, u8 num, u32 *size)
 	} else if (type == MTD_DEV_TYPE_NAND) {
 #if defined(CONFIG_JFFS2_NAND) && (CONFIG_COMMANDS & CFG_CMD_NAND)
 		if (num < CFG_MAX_NAND_DEVICE) {
+#ifndef CFG_NAND_LEGACY
+			*size = nand_info[num].size;
+#else
 			extern struct nand_chip nand_dev_desc[CFG_MAX_NAND_DEVICE];
 			*size = nand_dev_desc[num].totlen;
+#endif
 			return 0;
 		}
 
@@ -1169,7 +1184,7 @@ static int generate_mtdparts(char *buf, u32 buflen)
 			}
 
 			/* ro mask flag */
-			if (part->mask_flags && MTD_WRITEABLE) {
+			if (part->mask_flags && MTD_WRITEABLE_CMD) {
 				len = 2;
 				if (len > maxlen)
 					goto cleanup;
@@ -1253,7 +1268,7 @@ static void list_partitions(void)
 		part_num = 0;
 		list_for_each(pentry, &dev->parts) {
 			part = list_entry(pentry, struct part_info, link);
-			printf(" %d: %-22s\t0x%08x\t0x%08x\t%d\n",
+			printf("%2d: %-20s0x%08x\t0x%08x\t%d\n",
 					part_num, part->name, part->size,
 					part->offset, part->mask_flags);
 
@@ -1285,7 +1300,7 @@ static void list_partitions(void)
  * Given partition identifier in form of <dev_type><dev_num>,<part_num> find
  * corresponding device and verify partition number.
  *
- * @param id string describing device and partition
+ * @param id string describing device and partition or partition name
  * @param dev pointer to the requested device (output)
  * @param part_num verified partition number (output)
  * @param part pointer to requested partition (output)
@@ -1294,10 +1309,22 @@ static void list_partitions(void)
 int find_dev_and_part(const char *id, struct mtd_device **dev,
 		u8 *part_num, struct part_info **part)
 {
+	struct list_head *dentry, *pentry;
 	u8 type, dnum, pnum;
 	const char *p;
 
 	DEBUGF("--- find_dev_and_part ---\nid = %s\n", id);
+
+	list_for_each(dentry, &devices) {
+		*part_num = 0;
+		*dev = list_entry(dentry, struct mtd_device, link);
+		list_for_each(pentry, &(*dev)->parts) {
+			*part = list_entry(pentry, struct part_info, link);
+			if (strcmp((*part)->name, id) == 0)
+				return 0;
+			(*part_num)++;
+		}
+	}
 
 	p = id;
 	*dev = NULL;

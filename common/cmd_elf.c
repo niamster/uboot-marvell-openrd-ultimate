@@ -139,7 +139,11 @@ int do_bootvx ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	 */
 
 	if ((tmp = getenv ("bootaddr")) == NULL)
+	#ifdef __ARM__
+		bootaddr = 0x700;
+	#else
 		bootaddr = 0x4200;
+	#endif
 	else
 		bootaddr = simple_strtoul (tmp, NULL, 16);
 

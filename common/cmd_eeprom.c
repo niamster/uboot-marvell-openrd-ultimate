@@ -184,7 +184,7 @@ int eeprom_read (unsigned dev_addr, unsigned offset, uchar *buffer, unsigned cnt
 #ifdef CONFIG_SPI
 		spi_read (addr, alen, buffer, len);
 #else
-		if (i2c_read (addr[0], offset, alen-1, buffer, len) != 0)
+		if (i2c_read (0, addr[0], offset, alen-1, buffer, len) != 0)
 			rcode = 1;
 #endif
 		buffer += len;
@@ -294,7 +294,7 @@ int eeprom_write (unsigned dev_addr, unsigned offset, uchar *buffer, unsigned cn
 		addr_void[0]    |= CFG_I2C_EEPROM_ADDR;
 #endif
 		contr_reg[0] = 0xff;
-		if (i2c_read (contr_r_addr[0], contr_r_addr[1], 1, contr_reg, 1) != 0) {
+		if (i2c_read (0, contr_r_addr[0], contr_r_addr[1], 1, contr_reg, 1) != 0) {
 			rcode = 1;
 		}
 		ctrl_reg_v = contr_reg[0];
@@ -309,21 +309,21 @@ int eeprom_write (unsigned dev_addr, unsigned offset, uchar *buffer, unsigned cn
 			/* Set write enable latch.
 			 */
 			contr_reg[0] = 0x02;
-			if (i2c_write (contr_r_addr[0], 0xff, 1, contr_reg, 1) != 0) {
+			if (i2c_write (0, contr_r_addr[0], 0xff, 1, contr_reg, 1) != 0) {
 				rcode = 1;
 			}
 
 			/* Set register write enable latch.
 			 */
 			contr_reg[0] = 0x06;
-			if (i2c_write (contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
+			if (i2c_write (0, contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
 				rcode = 1;
 			}
 
 			/* Modify ctrl register.
 			 */
 			contr_reg[0] = ctrl_reg_v;
-			if (i2c_write (contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
+			if (i2c_write (0, contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
 				rcode = 1;
 			}
 
@@ -337,7 +337,7 @@ int eeprom_write (unsigned dev_addr, unsigned offset, uchar *buffer, unsigned cn
 			 */
 			contr_reg[0] = 0;
 			for (i = 0; i < MAX_ACKNOWLEDGE_POLLS; i++) {
-				if (i2c_read (addr_void[0], addr_void[1], 1, contr_reg, 1) == 0)
+				if (i2c_read (0, addr_void[0], addr_void[1], 1, contr_reg, 1) == 0)
 					break;	/* got ack */
 #if defined(CFG_EEPROM_PAGE_WRITE_DELAY_MS)
 				udelay(CFG_EEPROM_PAGE_WRITE_DELAY_MS * 1000);
@@ -355,14 +355,14 @@ int eeprom_write (unsigned dev_addr, unsigned offset, uchar *buffer, unsigned cn
 			/* Set write enable latch.
 			 */
 			contr_reg[0] = 0x02;
-			if (i2c_write (contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
+			if (i2c_write (0, contr_r_addr[0], 0xFF, 1, contr_reg, 1) != 0) {
 			       rcode = 1;
 			}
 		}
 		/* Write is enabled ... now write eeprom value.
 		 */
 #endif
-		if (i2c_write (addr[0], offset, alen-1, buffer, len) != 0)
+		if (i2c_write (0, addr[0], offset, alen-1, buffer, len) != 0)
 			rcode = 1;
 
 #endif
@@ -395,7 +395,11 @@ eeprom_probe (unsigned dev_addr, unsigned offset)
 
 	chip |= dev_addr;		/* insert device address */
 
+#if defined(CONFIG_MARVELL)
+	return (i2c_probe (1, chip));
+#else
 	return (i2c_probe (chip));
+#endif
 }
 #endif
 

@@ -41,7 +41,8 @@ VENDOR=
 
 TOPDIR	:= $(shell if [ "$$PWD" != "" ]; then echo $$PWD; else pwd; fi)
 export	TOPDIR
-
+SRCTREE		:= $(TOPDIR)
+export	SRCTREE
 ifeq (include/config.mk,$(wildcard include/config.mk))
 # load ARCH, BOARD, and CPU configuration
 include include/config.mk
@@ -57,7 +58,9 @@ ifeq ($(ARCH),ppc)
 CROSS_COMPILE = powerpc-linux-
 endif
 ifeq ($(ARCH),arm)
+ifeq ($(CROSS),armlinux)
 CROSS_COMPILE = arm-linux-
+endif
 endif
 ifeq ($(ARCH),i386)
 ifeq ($(HOSTARCH),i386)
@@ -118,8 +121,15 @@ LIBS += disk/libdisk.a
 LIBS += rtc/librtc.a
 LIBS += dtt/libdtt.a
 LIBS += drivers/libdrivers.a
+LIBS += drivers/nand/libnand.a
+LIBS += drivers/usb/libusb.a
 LIBS += drivers/sk98lin/libsk98lin.a
+ifeq ($(VENDOR),mv_feroceon)
+LIBS += post/libpost.a 
+LIBS += diag/libdiag.a 
+else
 LIBS += post/libpost.a post/cpu/libcpu.a
+endif
 LIBS += common/libcommon.a
 .PHONY : $(LIBS)
 
@@ -129,16 +139,33 @@ PLATFORM_LIBS += -L $(shell dirname `$(CC) $(CFLAGS) -print-libgcc-file-name`) -
 
 # The "tools" are needed early, so put this first
 # Don't include stuff already done in $(LIBS)
-SUBDIRS	= tools \
-	  examples \
-	  post \
-	  post/cpu
+#SUBDIRS	= tools \
+
+ifeq ($(VENDOR),mv_feroceon)
+SUBDIRS = post
+else
+SUBDIRS = post \
+          post/cpu \
+          examples
+endif
+
 .PHONY : $(SUBDIRS)
 
 #########################################################################
 #########################################################################
 
 ALL = u-boot.srec u-boot.bin System.map
+BINCPY = cp -f u-boot.bin u-boot-${MV_OUTPUT}.bin
+ELFCPY = cp -f u-boot u-boot-${MV_OUTPUT}
+SRECCPY = cp -f u-boot.srec u-boot-${MV_OUTPUT}.srec
+
+DO_IMAGE_NAND = ./tools/doimage -T nand -D 0x600000 -E 0x670000 -P 2048 -R \
+dramregs_$(MV_DDR_FREQ)_A.txt u-boot-${MV_OUTPUT}.bin u-boot-${MV_OUTPUT}_$(MV_DDR_FREQ)_nand.bin
+DO_IMAGE_UART = ./tools/doimage -T uart -D 0x600000 -E 0x670000 -R \
+dramregs_$(MV_DDR_FREQ)_A.txt u-boot-${MV_OUTPUT}.bin u-boot-${MV_OUTPUT}_$(MV_DDR_FREQ)_uart.bin
+DO_IMAGE_FLASH = ./tools/doimage -T flash -D 0x600000 -E 0x670000 -R \
+dramregs_$(MV_DDR_FREQ)_A.txt u-boot-${MV_OUTPUT}.bin u-boot-${MV_OUTPUT}_$(MV_DDR_FREQ)_flash.bin
+
 
 all:		$(ALL)
 
@@ -147,9 +174,18 @@ u-boot.hex:	u-boot
 
 u-boot.srec:	u-boot
 		$(OBJCOPY) ${OBJCFLAGS} -O srec $< $@
+		$(SRECCPY)
 
 u-boot.bin:	u-boot
 		$(OBJCOPY) ${OBJCFLAGS} -O binary $< $@
+		$(BINCPY)
+ifeq ($(NAND_BOOT), y)
+		$(DO_IMAGE_NAND)
+endif
+ifeq ($(SPI_BOOT), y)
+		$(DO_IMAGE_FLASH)
+endif
+		$(DO_IMAGE_UART)
 
 u-boot.img:	u-boot.bin
 		./tools/mkimage -A $(ARCH) -T firmware -C none \
@@ -160,6 +196,16 @@ u-boot.img:	u-boot.bin
 
 u-boot.dis:	u-boot
 		$(OBJDUMP) -d $< > $@
+
+		
+nboot:          $(NAND_OBJS)
+		$(LD) $(NAND_LDFLAGS) $(NAND_OBJS) --start-group $(LIBS) $(PLATFORM_LIBS) --end-group\
+		-e nbootStart -Map nboot.map -o nboot
+		$(OBJCOPY) ${OBJCFLAGS} -O binary $@ $@.bin
+		$(OBJDUMP) -d $@ > $@.dis
+
+cnboot:		
+		rm -f nboot*		
 
 u-boot:		depend $(SUBDIRS) $(OBJS) $(LIBS) $(LDSCRIPT)
 		UNDEF_SYM=`$(OBJDUMP) -x $(LIBS) |sed  -n -e 's/.*\(__u_boot_cmd_.*\)/-u\1/p'|sort|uniq`;\
@@ -197,6 +243,7 @@ System.map:	u-boot
 		@$(NM) $< | \
 		grep -v '\(compiled\)\|\(\.o$$\)\|\( [aUw] \)\|\(\.\.ng$$\)\|\(LASH[RL]DI\)' | \
 		sort > System.map
+		$(ELFCPY)
 
 #########################################################################
 else
@@ -1349,8 +1396,1169 @@ AmigaOneG3SE_config:	unconfig
 BAB7xx_config: unconfig
 	@./mkconfig $(@:_config=) ppc 74xx_7xx bab7xx eltec
 
-CPCI750_config:        unconfig
-	@./mkconfig CPCI750 ppc 74xx_7xx cpci750 esd
+MV64XXX_PPC_LE_config \
+MV64XXX_PPC_config :  unconfig
+	@./mkconfig MV64XXX_PPC ppc 74xx_7xx db64xxx_ppc Marvell
+	@[ -z "$(findstring LE,$@)" ] || \
+		{ echo "CONFIG_MARVELL_LE = y" >>include/config.mk ;\
+		  echo "export CONFIG_MARVELL_LE" >> include/config.mk ;\
+		  echo "** Little Endian ** config " ; \
+		}
+	@[ -z "$(findstring MV64XXX_PPC,$@)" ] || \
+		{ echo "CROSS_COMPILE  = powerpc-linux-" >> include/config.mk ;\
+		  echo "export CROSS_COMPILE" >> include/config.mk ; \
+		  echo "using powerpc-linux- cross compiler" ;\
+		}
+
+#########################################################################
+## Marvell KW based Socs
+#########################################################################
+
+ifeq ($(CROSS),armlinux)
+else
+CSL = arm-none-linux-gnueabi-
+CSLBE = armeb-none-linux-gnueabi-
+endif
+
+rd88f6281a_config \
+OpenRD88f6281a_config \
+db88f6281abp_config \
+rd88f6192a_config \
+db88f6192abp_config \
+db88f6180abp_config \
+rd88f6190a_config \
+db88f6190abp_config \
+rd88f6281apcac_config \
+rd88f6281Sheevaplug_config \
+dbcustomer_config \
+:
+	@$(MAKE) -s mv_kw RULE=$@
+
+mv_kw:	unconfig
+	@./mkconfig $(@:_config=) arm arm926ejs config_kw mv_feroceon;
+	@cp board/mv_feroceon/config_kw/config_def.mk board/mv_feroceon/config_kw/config.mk;
+	@echo "MV_OUTPUT = $(RULE:_config=)" >> include/config.mk;	\
+#=======================
+# Soc Compilation flag
+#=======================
+	@[ -z "$(findstring 6281,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV88F6281" >> include/config.mk;	\
+		  echo "** MV_88F6281 image ** config " ; \
+		}
+	@[ -z "$(findstring 6192,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV88F6192" >> include/config.mk;	\
+		  echo "** MV_88F6192 image ** config " ; \
+		}
+	@[ -z "$(findstring 6190,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV88F6190" >> include/config.mk;	\
+		  echo "** MV_88F6190 image ** config " ; \
+		}
+	@[ -z "$(findstring 6180,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV88F6180" >> include/config.mk;	\
+		  echo "** MV_88F6180 image ** config " ; \
+		}
+#=======================
+# Board Compilation flags
+#=======================
+	@[ -z "$(findstring db88f6281abp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6281A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 400db" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** DB 88F6281A BP ** config " ; \
+                }
+	@[ -z "$(findstring OpenRD88f6281a_config,$(RULE))" ] || \
+               { echo "MV_FLAGS += -DOPENRD_88F6281A" >> include/config.mk;  \
+                 echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;   \
+                 echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;     \
+                 echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;        \
+		 echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	         echo "MV_DDR_FREQ = 400rd" >> include/config.mk;	\
+                 cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;     \
+                 echo "** OpenRD-88F6281A ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6281a_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6281A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 400rd" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** RD 88F6281A ** config " ; \
+                }
+	@[ -z "$(findstring db88f6192abp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6192A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200db619x" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** DB 88F6192A BP ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6192a_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6192A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200rd" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** RD 88F6192A ** config " ; \
+                }
+	@[ -z "$(findstring db88f6180abp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6180A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200db" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** DB 88F6180A BP ** config " ; \
+                }
+	@[ -z "$(findstring db88f6190abp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6190A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200db" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** DB 88F6190A BP ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6190a_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6190A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200rd" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** RD 88F6190A ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6281apcac_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6281A_PCAC" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 200pcac" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** RD 88F6281A PCAC** config " ; \
+                }
+	@[ -z "$(findstring rd88f6281Sheevaplug_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6281A_SHEEVA_PLUG" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 400db" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** SHEEVA PLUG** config " ; \
+                }
+	@[ -z "$(findstring dbcustomer_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_CUSTOMER" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	          echo "MV_DDR_FREQ = 400db" >> include/config.mk;	\
+		  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;	\
+		  echo "** DB CUSTOMER** config " ; \
+                }
+
+#==============================
+# Little Endian Cross Compiler
+#==============================
+ifeq ($(BE),)
+ifeq ($(CSL),)
+	@echo "CROSS_COMPILE = arm-none-linux-gnueabi-" >> include/config.mk;
+else	
+	@echo "CROSS_COMPILE = $(CSL)" >> include/config.mk;
+endif
+endif
+#==============================
+# Big Endian Cross Compiler
+#==============================
+ifeq ($(BE),1)
+	@echo "MV_FLAGS += -mbig-endian -D__BE" >> include/config.mk;
+	@echo "BIG_ENDIAN =y" >> include/config.mk;
+	@echo "LDFLAGS += -EB" >> include/config.mk;
+ifeq ($(CSLBE),)		
+	@echo "CROSS_COMPILE = armeb-none-linux-gnueabi-" >> include/config.mk;	
+else
+	@echo "CROSS_COMPILE = $(CSLBE)"  >> include/config.mk;
+endif	
+	@echo "** Big Endian ** config ";
+endif
+
+#=================
+# USB support
+#=================
+#ifeq ($(USB),1)
+	@echo "MV_FLAGS += -DMV_USB -DCONFIG_CMD_USB" >> include/config.mk;
+	@echo "MV_USB=y" >> include/config.mk;
+	@echo "** With USB ** config " ;
+#endif
+#=================
+# NAND support
+#=================
+ifeq ($(NAND),1)
+	@echo "** NAND support image ** config " ;
+	@echo "MV_FLAGS += -DMV_NAND" >> include/config.mk;
+endif
+#=================
+# Boot from NAND support
+#=================
+ifeq ($(NBOOT),1)
+	@echo "** Boot from NAND support image ** config " ;
+	@echo "MV_FLAGS += -DMV_NAND_BOOT" >> include/config.mk;
+	@echo "MV_FLAGS += -DMV_NAND" >> include/config.mk;
+	@echo "NAND_BOOT =y" >> include/config.mk;
+	@cat board/mv_feroceon/config_kw/config_nand.mk >> board/mv_feroceon/config_kw/config.mk;
+	cp board/mv_feroceon/config_kw/u-boot-sec128k.lds board/mv_feroceon/config_kw/u-boot.lds;
+endif
+#=================
+# SPI support
+#=================
+ifeq ($(SPI),1)
+	@echo "** SPI support image ** config " ;
+	@echo "MV_FLAGS += -DMV_SPI" >> include/config.mk;
+endif
+ifeq ($(SPIBOOT),1)
+	@echo "** Boot from SPI support image ** config " ;
+	@echo "MV_FLAGS += -DMV_SPI" >> include/config.mk;
+	@echo "MV_FLAGS += -DMV_SPI_BOOT" >> include/config.mk;
+	@echo "SPI_BOOT =y" >> include/config.mk;
+endif
+#=================
+# MFlash support
+#=================
+ifeq ($(MFLASH),1)
+	@echo "** MFLASH support image ** config " ;
+	@echo "MV_FLAGS += -DMV_FLASH" >> include/config.mk;
+endif
+ifeq ($(MFLASHBOOT),1)
+	@echo "** Boot from MFLASH support image ** config " ;
+	@echo "MV_FLAGS += -DMV_FLASH" >> include/config.mk;
+	@echo "MV_FLAGS += -DMV_FLASH_BOOT" >> include/config.mk;
+endif
+#=================
+# BOOTROM support
+#=================
+#ifeq ($(BOOTROM),1)
+#	@echo "** BOOTROM support image ** config " ;
+#	@echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;
+ifeq ($(NBOOT),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-nand.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-header.lds board/mv_feroceon/config/u-boot.lds;
+endif
+#endif
+#===================
+# Tiny Image support
+#===================
+ifneq ($(TINY),)
+	@echo "MV_FLAGS += -DMV_TINY_IMAGE" >> include/config.mk;
+	@echo "MV_TINY_IMAGE=y" >> include/config.mk;
+ifeq ($(TINY),256K_32K)
+	@echo "** TINY image BootSize=256K SEC=32K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec32k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec32k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_32K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+ifeq ($(TINY),256K_64K)
+	@echo "** TINY image BootSize=256K SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+ifeq ($(TINY),512K_64K)
+	@echo "** TINY image BootSize=512K SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;
+else
+ifeq ($(TINY),4M_128K)
+	@echo "** TINY image BootSize=4M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_4M" >> include/config.mk;
+else
+ifeq ($(TINY),8M_128K)
+	@echo "** TINY image BootSize=8M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;
+else
+ifeq ($(TINY),16M_64K)
+	@echo "** TINY image BootSize=16M SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;
+else
+ifeq ($(TINY),16M_128K)
+	@echo "** TINY image BootSize=16M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;
+else
+ifeq ($(TINY),256K_4K)
+	@echo "** TINY image BootSize=256K SEC=4K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec4k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec4k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_4K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+	@make mrproper;	
+	@echo "" ;
+	@echo "** ERROR : Illegal TINY image configuration" ;
+	@echo "" ;
+	@echo "Legal values for TINY are :" ;
+	@echo "" ;
+	@echo "512K_64K, 16M_64K, 16M_128K, 256K_32K or 256K_4K" ;
+	@echo "" ;
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+#=============================
+# Summary of compilation flags
+#=============================
+	@echo -e "CPPFLAGS += \044(MV_IMAGE_FLAGS) \044(MV_FLAGS)" >> include/config.mk;
+
+	
+#########################################################################
+## END of Marvell KW based Socs
+#########################################################################
+
+#########################################################################
+## Marvell Feroceon based Socs
+#########################################################################
+# Parameters:  Target  Architecture  CPU  Board [VENDOR] [SOC] #
+#
+
+rd78XX0_PCAC_config \
+rd78XX0_H3C_config \
+rd78XX0_MP_H3C_config \
+rd78XX0_AMC_config \
+rd78XX0_MP_AMC_config \
+rd78XX0_MASA_config \
+rd78XX0_MP_MASA_config \
+rd78XX0_MP_MASA_2DIMM_config \
+db78200_MP_config \
+db78XX0_config : 
+	@$(MAKE) -s mv_dd RULE=$@
+mv_dd:	unconfig
+	@./mkconfig $(@:_config=) arm arm926ejs config_dd mv_feroceon;
+	@cp -f board/mv_feroceon/config_dd/config_def.mk board/mv_feroceon/config_dd/config.mk;
+	@cp -f board/mv_feroceon/config_dd/u-boot_def.lds board/mv_feroceon/config_dd/u-boot.lds;
+	@echo "MV_OUTPUT = $(RULE:_config=)" >> include/config.mk;	\
+#=======================
+# Soc Compilation flag
+#=======================
+	@[ -z "$(findstring 78XX0_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV78XX0" >> include/config.mk;	\
+		  echo "** MV_78XX0 image ** config " ; \
+		}
+	@[ -z "$(findstring 78200_MP,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV78XX0" >> include/config.mk;	\
+		  echo "MV_FLAGS += -DMV78200" >> include/config.mk;	\
+		  echo "MV78200 =y" >> include/config.mk;	\
+		  echo "** MV78200 image ** config " ; \
+		}
+#=======================
+# Board Compilation flags
+#=======================
+	@[ -z "$(findstring db78XX0_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_MV78XX0" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  echo "** DB 78XX0 BP ** config " ; \
+                }
+	@[ -z "$(findstring db78200_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_MV78XX0" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_32M" >> include/config.mk;	\
+		  cp -f board/mv_feroceon/config_dd/u-boot-sec128k.lds board/mv_feroceon/config_dd/u-boot.lds; \
+		  echo "** DB 78200 A BP ** config " ; \
+                }
+	@[ -z "$(findstring _AMC_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_MV78XX0_AMC" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  echo "** RD 78XX0 AMC ** config " ; \
+                }
+	@[ -z "$(findstring _H3C_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_MV78XX0_H3C" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_2M" >> include/config.mk;	\
+		  echo "** RD 78XX0 H3C ** config " ; \
+                }
+	@[ -z "$(findstring _MASA_2DIMM_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_MV78XX0_MASA" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DRD_MV78XX0_MASA_2DIMM" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  echo "** RD 78XX0 MASA ** config " ; \
+                }
+	@[ -z "$(findstring _MASA_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_MV78XX0_MASA" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  echo "** RD 78XX0 MASA ** config " ; \
+                }
+	@[ -z "$(findstring _PCAC_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_MV78XX0_PCAC" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  echo "** RD 78XX0 PCAC ** config " ; \
+                }
+
+#==============================
+# Little Endian Cross Compiler
+#==============================
+ifeq ($(BE),)
+ifeq ($(CSL),)
+	@echo "CROSS_COMPILE = arm-none-linux-gnueabi-" >> include/config.mk;
+else	
+	@echo "CROSS_COMPILE = $(CSL)" >> include/config.mk;
+endif
+	@echo "CONFIG_MARVELL_LE = y" >>include/config.mk ;
+	@echo "export CONFIG_MARVELL_LE" >> include/config.mk ;
+	@echo "** Little Endian ** config " ; 
+	@echo "MV_FLAGS += -D__LE" >> include/config.mk;
+endif
+#==============================
+# Big Endian Cross Compiler
+#==============================
+ifeq ($(BE),1)
+	@echo "MV_FLAGS += -mbig-endian -D__BE" >> include/config.mk;
+	@echo "BIG_ENDIAN =y" >> include/config.mk;
+	@echo "LDFLAGS += -EB" >> include/config.mk;
+ifeq ($(CSLBE),)		
+	@echo "CROSS_COMPILE = armeb-none-linux-gnueabi-" >> include/config.mk;	
+else
+	@echo "CROSS_COMPILE = $(CSLBE)"  >> include/config.mk;
+endif	
+	@echo "** Big Endian ** config ";
+endif
+
+#=================
+# MV 78200 image option 
+#=================
+ifeq ($(LNX),1)
+	@echo "** Dual Boot for Linux ** config " ;
+	@echo "MV_FLAGS += -DCONFIG_MV78200" >> include/config.mk;
+endif
+#=================
+# Boot from NAND support
+#=================
+ifeq ($(NBOOT),1)
+	@echo "** Boot from NAND support image ** config " ;
+	@echo "MV_FLAGS += -DMV_NAND_BOOT" >> include/config.mk;
+	@echo "NAND_BOOT =y" >> include/config.mk;
+	@cat board/mv_feroceon/config_dd/config_nand.mk >> board/mv_feroceon/config_dd/config.mk;
+	@cp board/mv_feroceon/config_dd/u-boot-sec128k.lds board/mv_feroceon/config_dd/u-boot.lds;
+endif
+#=================
+# Boot from SPI support
+#=================
+ifeq ($(SPIBOOT),1)
+	@echo "** Boot from SPI support image ** config " ;
+	@echo "MV_FLAGS += -DMV_SPI_BOOT" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;
+endif
+
+#===================
+# Tiny Image support
+#===================
+ifneq ($(TINY),)
+	@echo "MV_FLAGS += -DMV_TINY_IMAGE" >> include/config.mk;
+	@echo "MV_TINY_IMAGE=y" >> include/config.mk;
+ifeq ($(TINY),256K_4K)
+	@echo "** TINY image BootSize=256K SEC=4K" ;
+	@cp board/mv_feroceon/config_dd/u-boot-sec4k-tiny.lds board/mv_feroceon/config_dd/u-boot.lds;
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_4K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+
+else
+	@make mrproper;	
+	@echo "" ;
+	@echo "** ERROR : Illegal TINY image configuration" ;
+	@echo "" ;
+	@echo "Legal values for TINY are :" ;
+	@echo "" ;
+	@echo "512K_64K or 256K_4K" ;
+	@echo "" ;
+endif
+endif
+#=============================
+# Summary of compilation flags
+#=============================
+	@echo -e "CPPFLAGS += \044(MV_IMAGE_FLAGS) \044(MV_FLAGS)" >> include/config.mk;
+
+
+#########################################################################
+## Marvell Feroceon based Socs
+#########################################################################
+
+ifeq ($(CROSS),armlinux)
+else
+CSL = arm-none-linux-gnueabi-
+CSLBE = armeb-none-linux-gnueabi-
+endif
+
+db88f1181_config \
+db88f5181L_VOIP2_config \
+rd88f5181L_VOIP2_FE_config \
+rd88f5181L_VOIP2_GE_config \
+rd88f5181L_FXO_GE_config \
+db88f5181_VOIP2_config \
+rd88f5181_GTW_FE_config \
+rd88f5181_GTW_GE_config \
+db88f5182_config \
+db88f5182_A_config \
+rd88f5182_NAS2_config \
+rd88f5182_NAS3_config \
+db88f5082_config \
+rd88f5082_NAS2_config \
+rd88f5082_NAS3_config \
+rd88w8660_config \
+db88w8660_config \
+rd88w8660_AP82S_config\
+db88f5181_POS_NAS_config \
+db88f5181_VOIP1_config \
+db88f5181_PRPMC_config \
+db88f5181_PEX_PCI_config \
+db88f5181_MNG_config \
+db88f5180n_config \
+db88f1281_config \
+db88f6082bp_config \
+db88f6082Lbp_config \
+db88f6082sa_config \
+rd88f6082nas_config \
+rd88f6082u_das_nas_config \
+rd88f6082das_plus_config \
+rd88f6082ge_sata_config \
+rd88f6082_dx243_24g_config \
+rd_88f5181L_Customer1_config \
+db88f5x8x_fpga_config \
+db88f6183Lbp_config \
+db88f6183_bp_config \
+db88f6183_bp_LargeSpi_config \
+rd88f6183_gp_config \
+rd88f6183_ap_config \
+db88f5181_old_config \
+db88f5181_config :
+	@$(MAKE) -s mv_feroceon RULE=$@
+
+mv_feroceon:	unconfig
+	@./mkconfig $(@:_config=) arm arm926ejs config mv_feroceon;
+	@cp board/mv_feroceon/config/config_def.mk board/mv_feroceon/config/config.mk;
+	@echo "MV_OUTPUT = $(RULE:_config=)" >> include/config.mk;	\
+#=======================
+# Soc Compilation flag
+#=======================
+	@[ -z "$(findstring 1181_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F1181" >> include/config.mk;	\
+		  echo "** MV_88F1181 image ** config " ; \
+		}
+	@[ -z "$(findstring 1281_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F1281" >> include/config.mk;	\
+		  echo "MV_88F1281=y" >> include/config.mk; \
+		  echo "** MV_88F1281 image ** config " ; \
+		}
+	@[ -z "$(findstring 5181_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5181" >> include/config.mk;	\
+		  echo "** MV_88F5181 image ** config " ; \
+		}
+	@[ -z "$(findstring 5182_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5182" >> include/config.mk;  \
+		  echo "** MV_88F5182 image ** config " ; \
+		}
+	@[ -z "$(findstring 5082_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5082" >> include/config.mk;  \
+		  echo "** MV_88F5082 image ** config " ; \
+		}
+	@[ -z "$(findstring 88w8660_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88W8660" >> include/config.mk;  \
+		  echo "MV_88W8660=y" >> include/config.mk; \
+		  echo "** MV_88W8660 image ** config " ; \
+		}
+	@[ -z "$(findstring 5181L_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5181L" >> include/config.mk;  \
+		  echo "** MV_88F5181L image ** config " ; \
+		}
+	@[ -z "$(findstring 5180n_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5180N" >> include/config.mk;  \
+		  echo "** MV_88F5180N image ** config " ; \
+		}
+	@[ -z "$(findstring 6082,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F6082" >> include/config.mk;  \
+		  echo "MV_88F6082=y" >> include/config.mk; \
+		  echo "** MV_88F6082 image ** config " ; \
+		}
+	@[ -z "$(findstring 6082L,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F6082L" >> include/config.mk;  \
+		  echo "MV_88F6082L=y" >> include/config.mk; \
+		  echo "** MV_88F6082L image ** config " ; \
+		}
+	@[ -z "$(findstring 5x8x,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F5181" >> include/config.mk;  \
+		  echo "MV_88F5181=y" >> include/config.mk; \
+		  echo "** MV_88F5X8X image ** config " ; \
+		}
+	@[ -z "$(findstring 6183_,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F6183" >> include/config.mk;  \
+		  echo "MV_88F6183=y" >> include/config.mk; \
+		  echo "** MV_88F6183 image ** config " ; \
+		}
+	@[ -z "$(findstring 6183L,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_88F6183L" >> include/config.mk;  \
+		  echo "MV_88F6183L=y" >> include/config.mk; \
+		  echo "** MV_88F6183L image ** config " ; \
+		}
+#=======================
+# Board Compilation flags
+#=======================
+	@[ -z "$(findstring db88f1181_config,$(RULE))" ] || \
+		{ echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+                }
+	@[ -z "$(findstring db88f1281_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F1281" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+                }
+	@[ -z "$(findstring db88f5181_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F5181" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB88F5181 BP-A/B ** config " ; \
+                }
+	@[ -z "$(findstring db88f5181_old_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F5181_OLD" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB88F5181 OLD BP ** config " ; \
+                }
+	@[ -z "$(findstring db88f5x8x_fpga_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_FPGA" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB88F5X8X FPGA ** config " ; \
+                }
+	@[ -z "$(findstring db88f5182_config,$(RULE))" ] || \
+		{ echo "CPPFLAGS += -DDB_88F5182" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F5182  ** config " ; \
+                }		
+	@[ -z "$(findstring db88f5182_A_config,$(RULE))" ] || \
+		{ echo "CPPFLAGS += -DDB_88F5182_A" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F5182 A  ** config " ; \
+                }		
+	@[ -z "$(findstring rd88f5182_NAS2,$(RULE))" ] || \
+		{ echo "CPPFLAGS += -DRD_88F5182" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5182  ** config " ; \
+                 }
+	@[ -z "$(findstring rd88f5182_NAS3,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5182_3" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5182_3  ** config " ; \
+		}		
+	@[ -z "$(findstring db88f5082_config,$(RULE))" ] || \
+		{ echo "CPPFLAGS += -DDB_88F5082" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F5082  ** config " ; \
+                }		
+	@[ -z "$(findstring rd88f5082_NAS2,$(RULE))" ] || \
+		{ echo "CPPFLAGS += -DRD_88F5082" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_4K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;	\
+		  echo "** RD_88F5082  ** config " ; \
+                 }
+	@[ -z "$(findstring rd88f5082_NAS3,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5082_3" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5082_3  ** config " ; \
+		}		
+	@[ -z "$(findstring Customer1,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_CUSTOMER1" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DDB_CUSTOMER" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_32M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** Customer 1 image ** config " ; \
+		}
+	@[ -z "$(findstring POS_NAS,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DMV_POS_NAS" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** POS_NAS image ** config " ; \
+		}
+	@[ -z "$(findstring PRPMC,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_PRPMC" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** PRPMC image ** config " ; \
+		}
+	@[ -z "$(findstring MNG,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_MNG" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** MNG image ** config " ; \
+		}
+	@[ -z "$(findstring PEX_PCI,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_PEX_PCI" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** PEX_PCI image ** config " ; \
+		}
+	@[ -z "$(findstring db88f5181_VOIP1,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_VOIP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** VOIP1 image ** config " ; \
+		}
+	@[ -z "$(findstring db88w8660_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88W8660" >> include/config.mk;	\
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+                }		
+	@[ -z "$(findstring rd88w8660_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88W8660" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88W8660 image ** config " ; \
+		}
+	@[ -z "$(findstring rd88w8660_AP82S_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88W8660_AP82S" >> include/config.mk;  \
+	          echo "MV_FLAGS += -DMV_DRAM_16M" >> include/config.mk;	\
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88W8660_AP82S image ** config " ; \
+		}
+	@[ -z "$(findstring db88f5181_VOIP2,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_DB_88F5181L" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F5181L_VOIP2 image ** config " ; \
+		}
+	@[ -z "$(findstring db88f5181L_VOIP2,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F5181L" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DRD_DB_88F5181L" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F5181L_VOIP2 image ** config " ; \
+		}		
+	@[ -z "$(findstring rd88f5181L_VOIP2_FE,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5181L_FE" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DRD_DB_88F5181L" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5181L_FE image ** config " ; \
+		}
+	@[ -z "$(findstring rd88f5181L_VOIP2_GE,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5181L_GE" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DRD_DB_88F5181L" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5181L_GE image ** config " ; \
+		}
+	@[ -z "$(findstring rd88f5181L_FXO_GE,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5181L_FXO_GE" >> include/config.mk;  \
+		  echo "MV_FLAGS += -DRD_DB_88F5181L" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5181L_FXO_GE image ** config " ; \
+		}
+	@[ -z "$(findstring rd88f5181_GTW_FE,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5181_GTWFE" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5181_GTW_FE image ** config " ; \
+		}
+	@[ -z "$(findstring rd88f5181_GTW_GE,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F5181_GTWGE" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F5181_GTW_GE image ** config " ; \
+		}
+	@[ -z "$(findstring db88f5180n_config,$(RULE))" ] || \
+		{ echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+                }
+	@[ -z "$(findstring db88f6082bp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6082BP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6082 image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6082bp_LP_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6082BP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;	\
+		  echo "NAND_LARGE_PAGE =y" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6082 image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6082Lbp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6082LBP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6082L image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6082sa_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6082SA" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6082 image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6082nas_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6082NAS" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6082_NAS image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6082u_das_nas_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6082MICRO_DAS_NAS" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6082_MICRO_DAS_NAS image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6082das_plus_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6082DAS_PLUS" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6082_DAS_PLUS image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6082ge_sata_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6082GE_SATA" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6082_GE_SATA image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6183Lbp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6183LBP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6183LBP image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6183_bp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6183BP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6183BP image ** config " ; \
+                }
+	@[ -z "$(findstring db88f6183_bp_LargeSpi_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DDB_88F6183BP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;	\
+		  echo "MV_IMAGE_FLAGS += -DMV_MMC" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec256k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** DB_88F6183BP image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6183_gp_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6183GP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+		  echo "MV_IMAGE_FLAGS += -DMV_MMC" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6183GP image ** config " ; \
+                }
+	@[ -z "$(findstring rd88f6183_ap_config,$(RULE))" ] || \
+		{ echo "MV_FLAGS += -DRD_88F6183AP" >> include/config.mk;  \
+		  echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;	\
+	          echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;	\
+		  cp board/mv_feroceon/config/u-boot-sec64k.lds board/mv_feroceon/config/u-boot.lds;	\
+		  echo "** RD_88F6183AP image ** config " ; \
+                }
+
+#==============================
+# Little Endian Cross Compiler
+#==============================
+ifeq ($(BE),)
+ifeq ($(CSL),)
+	@echo "CROSS_COMPILE = arm-none-linux-gnueabi-" >> include/config.mk;
+else	
+	@echo "CROSS_COMPILE = $(CSL)" >> include/config.mk;
+endif
+endif
+#==============================
+# Big Endian Cross Compiler
+#==============================
+ifeq ($(BE),1)
+	@echo "MV_FLAGS += -mbig-endian -D__BE" >> include/config.mk;
+	@echo "BIG_ENDIAN =y" >> include/config.mk;
+	@echo "LDFLAGS += -EB" >> include/config.mk;
+ifeq ($(CSLBE),)		
+	@echo "CROSS_COMPILE = armeb-none-linux-gnueabi-" >> include/config.mk;	
+else
+	@echo "CROSS_COMPILE = $(CSLBE)"  >> include/config.mk;
+endif	
+	@echo "** Big Endian ** config ";
+endif
+
+#=================
+# USB support
+#=================
+ifeq ($(USB),1)
+	@echo "MV_FLAGS += -DMV_USB" >> include/config.mk;
+	@echo "MV_USB=y" >> include/config.mk;
+	@echo "** With USB ** config " ;
+endif
+#=================
+# NAND support
+#=================
+ifeq ($(NAND),1)
+	@echo "** NAND support image ** config " ;
+	@echo "MV_FLAGS += -DMV_NAND" >> include/config.mk;
+endif
+#=================
+# Boot from NAND support
+#=================
+ifeq ($(NBOOT),1)
+	@echo "** Boot from NAND support image ** config " ;
+	@echo "MV_FLAGS += -DMV_NAND_BOOT" >> include/config.mk;
+	@echo "NAND_BOOT =y" >> include/config.mk;
+	@cat board/mv_feroceon/config/config_nand.mk >> board/mv_feroceon/config/config.mk;
+	cp board/mv_feroceon/config/u-boot-sec128k.lds board/mv_feroceon/config/u-boot.lds;
+endif
+#=================
+# SPI support
+#=================
+ifeq ($(SPI),1)
+	@echo "** SPI support image ** config " ;
+	@echo "MV_FLAGS += -DMV_SPI" >> include/config.mk;
+endif
+ifeq ($(SPIBOOT),1)
+	@echo "** Boot from SPI support image ** config " ;
+	@echo "MV_FLAGS += -DMV_SPI" >> include/config.mk;
+	@echo "MV_FLAGS += -DMV_SPI_BOOT" >> include/config.mk;
+endif
+#=================
+# MFlash support
+#=================
+ifeq ($(MFLASH),1)
+	@echo "** MFLASH support image ** config " ;
+	@echo "MV_FLAGS += -DMV_FLASH" >> include/config.mk;
+endif
+ifeq ($(MFLASHBOOT),1)
+	@echo "** Boot from MFLASH support image ** config " ;
+	@echo "MV_FLAGS += -DMV_FLASH" >> include/config.mk;
+	@echo "MV_FLAGS += -DMV_FLASH_BOOT" >> include/config.mk;
+endif
+#=================
+# BOOTROM support
+#=================
+ifeq ($(BOOTROM),1)
+	@echo "** BOOTROM support image ** config " ;
+	@echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;
+ifeq ($(NBOOT),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-nand.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-header.lds board/mv_feroceon/config/u-boot.lds;
+endif
+endif
+#===================
+# Tiny Image support
+#===================
+ifneq ($(TINY),)
+	@echo "MV_FLAGS += -DMV_TINY_IMAGE" >> include/config.mk;
+	@echo "MV_TINY_IMAGE=y" >> include/config.mk;
+ifeq ($(TINY),256K_32K)
+	@echo "** TINY image BootSize=256K SEC=32K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec32k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec32k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_32K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+ifeq ($(TINY),256K_64K)
+	@echo "** TINY image BootSize=256K SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+ifeq ($(TINY),512K_64K)
+	@echo "** TINY image BootSize=512K SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;
+else
+ifeq ($(TINY),4M_128K)
+	@echo "** TINY image BootSize=4M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_4M" >> include/config.mk;
+else
+ifeq ($(TINY),8M_128K)
+	@echo "** TINY image BootSize=8M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_8M" >> include/config.mk;
+else
+ifeq ($(TINY),16M_64K)
+	@echo "** TINY image BootSize=16M SEC=64K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec64k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec64k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_64K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;
+else
+ifeq ($(TINY),16M_128K)
+	@echo "** TINY image BootSize=16M SEC=128K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec128k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec128k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_128K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_16M" >> include/config.mk;
+else
+ifeq ($(TINY),256K_4K)
+	@echo "** TINY image BootSize=256K SEC=4K" ;
+ifeq ($(BOOTROM),1)
+	@cp board/mv_feroceon/config/u-boot-sec4k-header-tiny.lds board/mv_feroceon/config/u-boot.lds;
+else
+	@cp board/mv_feroceon/config/u-boot-sec4k-tiny.lds board/mv_feroceon/config/u-boot.lds;
+endif
+	@echo "MV_IMAGE_FLAGS = -DMV_SEC_4K" >> include/config.mk;
+	@echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_256K" >> include/config.mk;
+else
+	@make mrproper;	
+	@echo "" ;
+	@echo "** ERROR : Illegal TINY image configuration" ;
+	@echo "" ;
+	@echo "Legal values for TINY are :" ;
+	@echo "" ;
+	@echo "512K_64K, 16M_64K, 16M_128K, 256K_32K or 256K_4K" ;
+	@echo "" ;
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+#=============================
+# Summary of compilation flags
+#=============================
+	@echo -e "CPPFLAGS += \044(MV_IMAGE_FLAGS) \044(MV_FLAGS)" >> include/config.mk;
+
+	
+#########################################################################
+## END of Marvell Feroceon based Socs
+#########################################################################
 
 DB64360_config:  unconfig
 	@./mkconfig DB64360 ppc 74xx_7xx db64360 Marvell
@@ -1840,10 +3048,13 @@ clobber:	clean
 		| xargs -0 rm -f
 	rm -f $(OBJS) *.bak tags TAGS
 	rm -fr *.*~
+	rm -f nboot nboot.dis nboot.map 
 	rm -f u-boot u-boot.map u-boot.hex $(ALL)
+	rm -f u-boot-${MV_OUTPUT}
 	rm -f tools/crc32.c tools/environment.c tools/env/crc32.c
 	rm -f tools/inca-swap-bytes cpu/mpc824x/bedbug_603e.c
 	rm -f include/asm/proc include/asm/arch include/asm
+	rm -fR images/*
 
 mrproper \
 distclean:	clobber unconfig

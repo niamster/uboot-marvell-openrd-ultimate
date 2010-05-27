@@ -205,6 +205,24 @@ struct tag_memclk {
 	u32 fmemclk;
 };
 
+#if defined (CONFIG_MARVELL_TAG)
+/* Marvell uboot parameters */
+#define ATAG_MV_UBOOT   0x41000403
+ 
+struct tag_mv_uboot {
+        u32 uboot_version;
+        u32 tclk;
+        u32 sysclk;
+	u32 isUsbHost;
+	char macAddr[4][6];
+	u16 mtu[4];
+#if defined (MV78XX0)
+	u32 fw_image_base;
+	u32 fw_image_size;
+#endif
+    u32 nand_ecc;
+};
+#endif
 struct tag {
 	struct tag_header hdr;
 	union {
@@ -227,6 +245,12 @@ struct tag {
 		 * DC21285 specific
 		 */
 		struct tag_memclk	memclk;
+#if defined (CONFIG_MARVELL_TAG)
+                /*
+                 * Marvell specific
+                 */
+                struct tag_mv_uboot     mv_uboot;
+#endif
 	} u;
 };
 

@@ -388,7 +388,9 @@ int	checkicache   (void);
 int	checkdcache   (void);
 void	upmconfig     (unsigned int, unsigned int *, unsigned int);
 ulong	get_tbclk     (void);
+#ifndef CONFIG_MARVELL
 void	reset_cpu     (ulong addr);
+#endif
 
 /* $(CPU)/serial.c */
 int	serial_init   (void);

@@ -53,7 +53,11 @@ extern int rtl8169_initialize(bd_t*);
 extern int scc_initialize(bd_t*);
 extern int skge_initialize(bd_t*);
 extern int tsec_initialize(bd_t*, int, char *);
-
+extern int mv_eth_initialize(bd_t *);
+#if defined(CONFIG_MARVELL) && defined(CONFIG_MV78200)
+extern int mvSocUnitIsMappedToThisCpu(int unit);
+#define GIGA0	4
+#endif
 static struct eth_device *eth_devices, *eth_current;
 
 struct eth_device *eth_get_dev(void)
@@ -131,12 +135,37 @@ int eth_register(struct eth_device* dev)
 int eth_initialize(bd_t *bis)
 {
 	char enetvar[32], env_enetaddr[6];
-	int i, eth_number = 0;
+	int i;
 	char *tmp, *end;
+
+	int eth_number = 0;
+#if 0
+#ifdef CONFIG_MARVELL
+	char port_name[32];
+	int mv_eth_number = 0;
+#ifdef CONFIG_MV78200
+	/* Skip ports mapped to another CPU*/
+	sprintf(port_name, "cpu%deth", whoAmI());
+	tmp = getenv("port_name");
+	if (enaMP())
+		if (0 == mvSocUnitIsMappedToThisCpu(GIGA0+eth_number))
+		{
+		    mv_eth_number++;
+		}
+#endif
+#endif
+#endif
 
 	eth_devices = NULL;
 	eth_current = NULL;
 
+#ifdef  CONFIG_MARVELL
+#if defined(MV_INCLUDE_GIG_ETH) || defined(MV_INCLUDE_UNM_ETH)
+	/* move to the begining so in case we have a PCI NIC it will
+        read the env mac addresses correctlly. */
+        mv_eth_initialize(bis);
+#endif
+#endif
 #if defined(CONFIG_MII) || (CONFIG_COMMANDS & CFG_CMD_MII)
 	miiphy_init();
 #endif
@@ -239,6 +268,7 @@ int eth_initialize(bd_t *bis)
 		char *ethprime = getenv ("ethprime");
 
 		do {
+
 			if (eth_number)
 				puts (", ");
 
@@ -249,6 +279,7 @@ int eth_initialize(bd_t *bis)
 				puts (" [PRIME]");
 			}
 
+#ifndef  CONFIG_MARVELL
 			sprintf(enetvar, eth_number ? "eth%daddr" : "ethaddr", eth_number);
 			tmp = getenv (enetvar);
 
@@ -278,7 +309,7 @@ int eth_initialize(bd_t *bis)
 
 				memcpy(dev->enetaddr, env_enetaddr, 6);
 			}
-
+#endif
 			eth_number++;
 			dev = dev->next;
 		} while(dev != eth_devices);
