@@ -51,7 +51,7 @@ void diag_serial_init(int port, int baud_rate)
 {
 	mvUartInit(port, CFG_TCLK / (16 * baud_rate), mvUartBase(port));
 
-#if defined(OPENRD_88F6281A)
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 	unsigned int reg_val = 0;
 	if(port)
 	{

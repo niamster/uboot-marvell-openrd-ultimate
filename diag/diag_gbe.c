@@ -4,7 +4,7 @@
 #include "eth-phy/mvEthPhy.h"
 #include "mvBoardEnvLib.h"
 
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 extern MV_32 is_client;
 #endif
 
@@ -65,7 +65,7 @@ int gbe_link_detect_test()
 	printf("\tGbE0 link detect test                            ");
 	printf(((result)? "FAILED\n":"PASSED\n"));
 
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 	if(MV_TRUE == is_client)
 	{
 		printf("\n");

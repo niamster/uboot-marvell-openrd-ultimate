@@ -11,7 +11,7 @@ diag_func_t *diag_sequence[] =
 	mem_address_bus_test,   /* DRAM Address bus test */
 	mem_device_test,        /* DRAM device test */
 	uart_int_lpbk_test,     /* UART internal loopback test */
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 	uart_ext_lpbk_test,     /* UART external loopback test */
 #endif
 #ifdef MV_NAND
@@ -30,7 +30,7 @@ char diag_cmd[][15] =
 	"addr_bus",
 	"device",
 	"uart_int",
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 	"uart_ext",
 #endif
 #ifdef MV_NAND

@@ -94,7 +94,7 @@ static MV_DEV_CS_INFO*  boardGetDevEntry(MV_32 devNum, MV_BOARD_DEV_CLASS devCla
 
 MV_U32 tClkRate   = -1;
 
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 MV_32 is_client = 1;
 #endif
 
@@ -145,6 +145,12 @@ MV_VOID mvBoardEnvInit(MV_VOID)
 		BOARD_INFO(boardId)->pBoardMppTypeValue[0].boardMppGroup1 = -1;
 		BOARD_INFO(boardId)->pBoardMppTypeValue[0].boardMppGroup2 = -1;
 	}
+#endif
+
+#ifdef OPENRD_ULTIMATE_88F6281A
+    /* OpenRD-Ultimate has different addresses of eth PHYs */
+    BOARD_INFO(boardId)->pBoardMacInfo[0].boardEthSmiAddr = 0x0;
+    BOARD_INFO(boardId)->pBoardMacInfo[1].boardEthSmiAddr = 0x1;
 #endif
 
 	/* Set GPP Out value */
@@ -246,9 +252,11 @@ MV_STATUS mvBoardNameGet(char *pNameBuff)
 
 	}
 
-#ifdef OPENRD_88F6281A
+#if defined(OPENRD_88F6281A)
 	mvOsSPrintf (pNameBuff, "%s-%s",BOARD_INFO(boardId)->boardName, 
 	                                is_client ? "Client" : "Base");
+#elif defined(OPENRD_ULTIMATE_88F6281A)
+    mvOsSPrintf (pNameBuff, "%s-Ultimate",BOARD_INFO(boardId)->boardName);
 #else
 	mvOsSPrintf (pNameBuff, "%s",BOARD_INFO(boardId)->boardName);
 #endif
@@ -2105,7 +2113,7 @@ MV_U32 mvBoardIdGet(MV_VOID)
 		tmpBoardId = DB_88F6281A_BP_ID;
 		#elif defined(RD_88F6281A)
 		tmpBoardId = RD_88F6281A_ID;
-		#elif defined(OPENRD_88F6281A)
+		#elif defined(OPENRD_88F6281A) || defined(OPENRD_ULTIMATE_88F6281A)
 		tmpBoardId = OPENRD_88F6281A_ID;
 		#elif defined(DB_88F6192A)
 		tmpBoardId = DB_88F6192A_BP_ID;

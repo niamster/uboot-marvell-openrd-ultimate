@@ -1422,6 +1422,7 @@ endif
 
 rd88f6281a_config \
 OpenRD88f6281a_config \
+OpenRDUltimate88f6281a_config \
 db88f6281abp_config \
 rd88f6192a_config \
 db88f6192abp_config \
@@ -1479,6 +1480,16 @@ mv_kw:	unconfig
 	         echo "MV_DDR_FREQ = 400rd" >> include/config.mk;	\
                  cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;     \
                  echo "** OpenRD-88F6281A ** config " ; \
+                }
+	@[ -z "$(findstring OpenRDUltimate88f6281a_config,$(RULE))" ] || \
+               { echo "MV_FLAGS += -DOPENRD_ULTIMATE_88F6281A" >> include/config.mk;  \
+                 echo "MV_IMAGE_FLAGS = -DMV_SEC_256K" >> include/config.mk;   \
+                 echo "MV_IMAGE_FLAGS += -DMV_BOOTSIZE_512K" >> include/config.mk;     \
+                 echo "MV_IMAGE_FLAGS += -DMV_LARGE_PAGE" >> include/config.mk;        \
+		 echo "MV_FLAGS += -DMV_BOOTROM" >> include/config.mk;	\
+	         echo "MV_DDR_FREQ = 400rd" >> include/config.mk;	\
+                 cp board/mv_feroceon/config_kw/u-boot-sec256k.lds board/mv_feroceon/config_kw/u-boot.lds;     \
+                 echo "** OpenRDUltimate-88F6281A ** config " ; \
                 }
 	@[ -z "$(findstring rd88f6281a_config,$(RULE))" ] || \
 		{ echo "MV_FLAGS += -DRD_88F6281A" >> include/config.mk;  \
