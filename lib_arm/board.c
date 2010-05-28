@@ -399,11 +399,14 @@ void start_armboot (void)
 
 	/* Diag and POST for Marvell platform */
 #ifdef CONFIG_MARVELL
-	if( !strcmp(getenv("run_diag"), "yes") ||
-	    !strcmp(getenv("run_diag"), "YES"))
+    env = getenv("run_diag");
+	if(env && (!strcmp(env, "yes") || !strcmp(env, "YES"))) {
 		run_diag();
-	else
-		mv_post_entry(0);
+	} else {
+        env = getenv("run_post");
+        if(env && (!strcmp(env, "yes") || !strcmp(env, "YES")))
+            mv_post_entry(0);
+    }
 #endif
 
 #ifdef CONFIG_VFD
