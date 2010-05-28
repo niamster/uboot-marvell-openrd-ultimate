@@ -73,7 +73,7 @@ disclaimer.
 /************************************************/
 /* U-Boot Specific				*/
 /************************************************/
-#define MV_INCLUDE_MONT_EXT
+/* #define MV_INCLUDE_MONT_EXT */
 
 #if defined(MV_INCLUDE_MONT_EXT)
 #define MV_INCLUDE_MONT_MMU
@@ -83,6 +83,7 @@ disclaimer.
 #endif
 #endif
 
+#define CLEAN_ENV
 
 /************************************************/
 /* RD boards specifics 				*/

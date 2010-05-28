@@ -45,6 +45,9 @@ disclaimer.
 #include <command.h>
 
 #include "mvSysHwConfig.h"
+
+int g_stack_cachable = 0;
+
 #if defined(MV_INCLUDE_MONT_EXT)
 
 #include "mvTypes.h"
@@ -60,8 +63,6 @@ extern void pageTableInit(void);
 extern void MPU_Init(void);
 #endif
 /* global */
-
-int g_stack_cachable = 0;
 
 
 #if defined(MV_INCLUDE_MONT_MMU)

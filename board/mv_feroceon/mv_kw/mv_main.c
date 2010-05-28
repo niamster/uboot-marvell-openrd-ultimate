@@ -427,8 +427,8 @@ void misc_init_r_env(void){
         if(/* !env || */ ( (strcmp(env,"yes") == 0) || (strcmp(env,"Yes") == 0) ) )
                 setenv("enaMonExt","yes");
         else
-#endif
                 setenv("enaMonExt","no");
+#endif
 #if defined (MV_INC_BOARD_NOR_FLASH)
         env = getenv("enaFlashBuf");
         if( ( (strcmp(env,"no") == 0) || (strcmp(env,"No") == 0) ) )
@@ -605,6 +605,7 @@ ethaddr=$(ethaddr) $(netbsd_netconfig)");
 	    setenv("vxWorks_bootargs",buff);
 	}
 
+#ifndef CLEAN_ENV
         /* linux boot arguments */
         env = getenv("bootargs_root");
         if(!env)
@@ -628,12 +629,15 @@ ethaddr=$(ethaddr) $(netbsd_netconfig)");
                 setenv("bootargs_end",CFG_BOOTARGS_END);
 #endif
 	}
-	
+#endif
+
+#ifndef CLEAN_ENV
         env = getenv("image_name");
         if(!env)
                 setenv("image_name","uImage");
- 
+#endif
 
+#ifndef CLEAN_ENV
 #if (CONFIG_BOOTDELAY >= 0)
         env = getenv("bootcmd");
         if(!env)
@@ -672,12 +676,15 @@ ip=$(ipaddr):$(serverip)$(bootargs_end) $(mvPhoneConfig); bootm 0x2000000;");
             setenv("standalone","fsload 0x2000000 $(image_name);setenv bootargs $(console) root=/dev/mtdblock0 rw \
 ip=$(ipaddr):$(serverip)$(bootargs_end); bootm 0x2000000;");
 #endif
-                 
-       /* Set boodelay to 3 sec, if Monitor extension are disabled */
+#endif
+
+#if defined(MV_INCLUDE_MONT_EXT)
+        /* Set boodelay to 3 sec, if Monitor extension are disabled */
         if(!enaMonExt()){
                 setenv("bootdelay","3");
 		setenv("disaMvPnp","no");
 	}
+#endif
 
 	/* Disable PNP config of Marvel memory controller devices. */
         env = getenv("disaMvPnp");
@@ -745,16 +752,20 @@ ip=$(ipaddr):$(serverip)$(bootargs_end); bootm 0x2000000;");
     if(!env)
             setenv("eth1mtu","1500");
 #endif
+#ifndef CLEAN_ENV
 #if defined(MV_INCLUDE_TDM)
         /* Set mvPhoneConfig env parameter */
         env = getenv("mvPhoneConfig");
         if(!env )
             setenv("mvPhoneConfig","mv_phone_config=dev0:fxs,dev1:fxs");
 #endif
+#endif
+#ifndef CLEAN_ENV
         /* Set mvNetConfig env parameter */
         env = getenv("mvNetConfig");
         if(!env )
 		    setenv("mvNetConfig","mv_net_config=(00:11:88:0f:62:81,0:1:2:3),mtu=1500");
+#endif
 #endif /*  (MV_INCLUDE_GIG_ETH) || defined(MV_INCLUDE_UNM_ETH) */
 
 #if defined(MV_INCLUDE_USB)
@@ -798,9 +809,11 @@ ip=$(ipaddr):$(serverip)$(bootargs_end); bootm 0x2000000;");
 	if (!env)
 		setenv("netretry","no");
 
+#if (CONFIG_COMMANDS & CFG_CMD_RCVR)
 	env = getenv("rcvrip");
 	if (!env)
 		setenv("rcvrip",RCVR_IP_ADDR);
+#endif
 
 	env = getenv("loadaddr");
 	if (!env)
