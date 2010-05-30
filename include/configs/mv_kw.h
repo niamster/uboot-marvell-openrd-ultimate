@@ -44,6 +44,10 @@
 /* version number passing when loading Kernel */
 #define VER_NUM 0x03041000           /* 3.4.16 */
 
+#define CONFIG_AUTOSCRIPT
+
+#define CLEAN_ENV
+
 /********************/
 /* MV DEV SUPPORTS  */
 /********************/	
@@ -210,9 +214,14 @@ extern unsigned int mvTclkGet(void);
 #else
 #define CONFIG_CMD_BASIC6 CONFIG_CMD_BASIC5
 #endif
-#define CONFIG_COMMANDS CONFIG_CMD_BASIC6
 
+#if defined(CONFIG_AUTOSCRIPT)
+#define CONFIG_CMD_BASIC7 (CONFIG_CMD_BASIC6 | CFG_CMD_AUTOSCRIPT)
+#else
+#define CONFIG_CMD_BASIC7 CONFIG_CMD_BASIC6
+#endif
 
+#define CONFIG_COMMANDS CONFIG_CMD_BASIC7
 
 /* this must be included AFTER the definition of CONFIG_COMMANDS (if any) */
 #include <cmd_confdefs.h>
