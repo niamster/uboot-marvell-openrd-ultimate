@@ -108,7 +108,11 @@ OBJDUMP = $(CROSS_COMPILE)objdump
 RANLIB	= $(CROSS_COMPILE)RANLIB
 
 RELFLAGS= $(PLATFORM_RELFLAGS)
+ifeq ($(DEBUG),1)
+DBGFLAGS= -g -DDEBUG=1 -DMV_RT_DEBUG=1
+else
 DBGFLAGS= -g #-DDEBUG
+endif
 OPTFLAGS= -Os #-fomit-frame-pointer
 ifndef LDSCRIPT
 #LDSCRIPT := $(TOPDIR)/board/$(BOARDDIR)/u-boot.lds.debug

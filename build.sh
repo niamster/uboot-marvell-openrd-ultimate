@@ -6,7 +6,7 @@ function config () {
 
 function build () {
 	rm -rf u-boot*
-	make
+	make -j4 $@
 	cp u-boot-OpenRDUltimate88f6281a_400rd_nand.bin /var/tftp/tftpboot/u-boot.bin.openrd
 	cp u-boot-OpenRDUltimate88f6281a_400rd_nand.bin /projects/openrd/openocd/u-boot.bin.openrd
 	cp u-boot-OpenRDUltimate88f6281a /projects/openrd/openocd/u-boot.elf.openrd
@@ -27,6 +27,9 @@ do
 			;;
 		build)
 			build
+            ;;
+		build-dbg)
+			build DEBUG=1
 			;;
 	esac
 	shift
