@@ -197,15 +197,14 @@ u-boot.img:	u-boot.bin
 u-boot.dis:	u-boot
 		$(OBJDUMP) -d $< > $@
 
-		
-nboot:          $(NAND_OBJS)
+nboot: $(NAND_OBJS)
 		$(LD) $(NAND_LDFLAGS) $(NAND_OBJS) --start-group $(LIBS) $(PLATFORM_LIBS) --end-group\
 		-e nbootStart -Map nboot.map -o nboot
 		$(OBJCOPY) ${OBJCFLAGS} -O binary $@ $@.bin
 		$(OBJDUMP) -d $@ > $@.dis
 
-cnboot:		
-		rm -f nboot*		
+cnboot:
+		rm -f nboot*
 
 u-boot:		depend $(SUBDIRS) $(OBJS) $(LIBS) $(LDSCRIPT)
 		UNDEF_SYM=`$(OBJDUMP) -x $(LIBS) |sed  -n -e 's/.*\(__u_boot_cmd_.*\)/-u\1/p'|sort|uniq`;\
@@ -235,6 +234,15 @@ tags:
 etags:
 		etags -a `find $(SUBDIRS) include \
 				lib_generic board/$(BOARDDIR) cpu/$(CPU) lib_$(ARCH) \
+				cpu/$(CPU) lib_$(ARCH) \
+				fs/cramfs fs/fat fs/fdos fs/jffs2 \
+				net disk rtc dtt drivers drivers/sk98lin common \
+			\( -name CVS -prune \) -o \( -name '*.[ch]' -print \)`
+
+mv-etags:
+		etags -a `find $(SUBDIRS) include \
+				lib_generic board/$(VENDOR)/{common,config,config_kw,mv_hal,mv_kw,uboot_oss,USP} \
+				cpu/$(CPU) lib_$(ARCH) \
 				fs/cramfs fs/fat fs/fdos fs/jffs2 \
 				net disk rtc dtt drivers drivers/sk98lin common \
 			\( -name CVS -prune \) -o \( -name '*.[ch]' -print \)`
@@ -1778,7 +1786,6 @@ endif
 #=============================
 	@echo -e "CPPFLAGS += \044(MV_IMAGE_FLAGS) \044(MV_FLAGS)" >> include/config.mk;
 
-	
 #########################################################################
 ## END of Marvell KW based Socs
 #########################################################################
@@ -2566,7 +2573,6 @@ endif
 #=============================
 	@echo -e "CPPFLAGS += \044(MV_IMAGE_FLAGS) \044(MV_FLAGS)" >> include/config.mk;
 
-	
 #########################################################################
 ## END of Marvell Feroceon based Socs
 #########################################################################
@@ -3057,7 +3063,7 @@ clobber:	clean
 		-o -name '*.srec' -o -name '*.bin' -o -name u-boot.img \) \
 		-print0 \
 		| xargs -0 rm -f
-	rm -f $(OBJS) *.bak tags TAGS
+	rm -f $(OBJS) *.bak 
 	rm -fr *.*~
 	rm -f nboot nboot.dis nboot.map 
 	rm -f u-boot u-boot.map u-boot.hex $(ALL)
