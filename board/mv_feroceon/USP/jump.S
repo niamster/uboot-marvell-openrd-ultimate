@@ -28,10 +28,10 @@ disclaimer.
 #include "mvCtrlEnvAsm.h"
 #include "sys/mvCpuIfRegs.h"
 
+.section	".reset_vector_sect",#alloc, #execinstr
 
 jumpStart:
 
-.section	".reset_vector_sect",#alloc, #execinstr
 #if defined(MV_88F6082) || defined(MV_88F6183) || defined(DB_88F5181_OLD) || defined(DB_FPGA) || \
 	defined(MV88F6281) || defined(MV88F6192) || defined(MV88F6180)  || defined(MV_88F6183L) || \
     defined(MV88F6190)
