@@ -240,7 +240,7 @@ etags:
 			\( -name CVS -prune \) -o \( -name '*.[ch]' -print \)`
 
 mv-etags:
-		etags -a `find $(SUBDIRS) include \
+		etags `find $(SUBDIRS) include \
 				lib_generic board/$(VENDOR)/{common,config,config_kw,mv_hal,mv_kw,uboot_oss,USP} \
 				cpu/$(CPU) lib_$(ARCH) \
 				fs/cramfs fs/fat fs/fdos fs/jffs2 \
